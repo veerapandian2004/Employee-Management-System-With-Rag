@@ -117,13 +117,18 @@ app_license = "mit"
 # -----------
 # Permissions evaluated in scripted ways
 
-# permission_query_conditions = {
-# 	"Event": "frappe.desk.doctype.event.event.get_permission_query_conditions",
-# }
-#
-# has_permission = {
-# 	"Event": "frappe.desk.doctype.event.event.has_permission",
-# }
+permission_query_conditions = {
+	"Employee": "employee_management_system.employee_management_system.permissions.get_employee_query_conditions",
+	"Salary Slip": "employee_management_system.employee_management_system.permissions.get_salary_slip_query_conditions",
+	"Leave Application": "employee_management_system.employee_management_system.permissions.get_leave_application_query_conditions",
+}
+
+has_permission = {
+	"Employee": "employee_management_system.employee_management_system.permissions.has_employee_permission",
+	"Salary Slip": "employee_management_system.employee_management_system.permissions.has_salary_slip_permission",
+	"Leave Application": "employee_management_system.employee_management_system.permissions.has_leave_application_permission",
+}
+
 
 # DocType Class
 # ---------------
@@ -148,23 +153,18 @@ app_license = "mit"
 # Scheduled Tasks
 # ---------------
 
-# scheduler_events = {
-# 	"all": [
-# 		"employee_management_system.tasks.all"
-# 	],
-# 	"daily": [
-# 		"employee_management_system.tasks.daily"
-# 	],
-# 	"hourly": [
-# 		"employee_management_system.tasks.hourly"
-# 	],
-# 	"weekly": [
-# 		"employee_management_system.tasks.weekly"
-# 	],
-# 	"monthly": [
-# 		"employee_management_system.tasks.monthly"
-# 	],
-# }
+scheduler_events = {
+	"all": [
+		"employee_management_system.employee_management_system.attendance.auto_clock_out_service.process_shift_completion_job"
+	],
+	"hourly": [
+		"employee_management_system.employee_management_system.attendance.auto_clock_out_service.process_shift_completion_job",
+		"employee_management_system.employee_management_system.shift_attendance.process_auto_attendance_job"
+	],
+	"daily": [
+		"employee_management_system.employee_management_system.shift_attendance.process_auto_attendance_daily"
+	],
+}
 
 # Testing
 # -------

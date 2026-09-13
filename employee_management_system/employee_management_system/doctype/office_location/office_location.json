@@ -1,0 +1,114 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:{office_name}",
+ "creation": "2026-09-09 15:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "office_name",
+  "latitude",
+  "longitude",
+  "allowed_radius",
+  "max_accuracy",
+  "is_active",
+  "address"
+ ],
+ "fields": [
+  {
+   "fieldname": "office_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Office Name",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "latitude",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Latitude",
+   "precision": "6",
+   "reqd": 1
+  },
+  {
+   "fieldname": "longitude",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Longitude",
+   "precision": "6",
+   "reqd": 1
+  },
+  {
+   "default": "150",
+   "description": "Allowed radius in meters for GPS attendance verification",
+   "fieldname": "allowed_radius",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Allowed Radius (Meters)",
+   "reqd": 1
+  },
+  {
+   "default": "50",
+   "description": "Maximum GPS accuracy in meters allowed for attendance",
+   "fieldname": "max_accuracy",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Maximum GPS Accuracy Allowed (Meters)",
+   "reqd": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Active Status"
+  },
+  {
+   "fieldname": "address",
+   "fieldtype": "Small Text",
+   "label": "Address Details"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-09-09 15:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Employee Management System",
+ "name": "Office Location",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 0,
+   "delete": 0,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Employee",
+   "share": 0,
+   "write": 0
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "office_name",
+ "sort_order": "ASC",
+ "states": []
+}
+

@@ -1,0 +1,159 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:shift_name",
+ "creation": "2026-09-09 10:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "shift_name",
+  "start_time",
+  "end_time",
+  "enable_auto_attendance",
+  "late_entry_grace_period",
+  "early_exit_grace_period",
+  "working_hours_threshold_for_half_day",
+  "working_hours_threshold_for_absent",
+  "working_hours_threshold_for_present",
+  "begin_check_in_before_shift_start_time",
+  "allow_check_out_after_shift_end_time",
+  "process_attendance_after",
+  "last_sync_of_checkin",
+  "weekly_off_days",
+  "is_active",
+  "description"
+ ],
+ "fields": [
+  {
+   "fieldname": "shift_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Shift Name",
+   "naming_rule": "By fieldname",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "start_time",
+   "fieldtype": "Time",
+   "in_list_view": 1,
+   "label": "Start Time",
+   "reqd": 1
+  },
+  {
+   "fieldname": "end_time",
+   "fieldtype": "Time",
+   "in_list_view": 1,
+   "label": "End Time",
+   "reqd": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "enable_auto_attendance",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Enable Auto Attendance"
+  },
+  {
+   "default": "15",
+   "fieldname": "late_entry_grace_period",
+   "fieldtype": "Int",
+   "label": "Late Entry Grace Period (Minutes)"
+  },
+  {
+   "default": "15",
+   "fieldname": "early_exit_grace_period",
+   "fieldtype": "Int",
+   "label": "Early Exit Grace Period (Minutes)"
+  },
+  {
+   "default": "4.0",
+   "fieldname": "working_hours_threshold_for_half_day",
+   "fieldtype": "Float",
+   "label": "Working Hours Threshold for Half Day"
+  },
+  {
+   "default": "1.0",
+   "fieldname": "working_hours_threshold_for_absent",
+   "fieldtype": "Float",
+   "label": "Working Hours Threshold for Absent"
+  },
+  {
+   "default": "8.0",
+   "fieldname": "working_hours_threshold_for_present",
+   "fieldtype": "Float",
+   "label": "Working Hours Threshold for Present"
+  },
+  {
+   "default": "60",
+   "fieldname": "begin_check_in_before_shift_start_time",
+   "fieldtype": "Int",
+   "label": "Begin Check-in Before Shift Start Time (Minutes)"
+  },
+  {
+   "default": "60",
+   "fieldname": "allow_check_out_after_shift_end_time",
+   "fieldtype": "Int",
+   "label": "Allow Check-out After Shift End Time (Minutes)"
+  },
+  {
+   "fieldname": "process_attendance_after",
+   "fieldtype": "Date",
+   "label": "Process Attendance After"
+  },
+  {
+   "fieldname": "last_sync_of_checkin",
+   "fieldtype": "Datetime",
+   "label": "Last Sync of Checkin",
+   "read_only": 1
+  },
+  {
+   "default": "Saturday, Sunday",
+   "fieldname": "weekly_off_days",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Weekly Off Days"
+  },
+  {
+   "default": "1",
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Is Active"
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-09-09 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Employee Management System",
+ "name": "Shift Type",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
+

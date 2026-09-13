@@ -1,0 +1,154 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-09-04 16:26:58.736121",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "employee",
+  "salary_month",
+  "basic_pay",
+  "hra",
+  "allowances",
+  "deductions",
+  "gross_pay",
+  "absent_days",
+  "unpaid_leave_days",
+  "lop_days",
+  "lop_deduction",
+  "leave_deduction",
+  "net_pay",
+  "select",
+  "email_status",
+  "email_sent_at"
+ ],
+ "fields": [
+  {
+   "fieldname": "employee",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Employee",
+   "options": "Employee",
+   "reqd": 1
+  },
+  {
+   "fieldname": "salary_month",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Salary Month",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "basic_pay",
+   "fieldtype": "Currency",
+   "label": "Basic Pay"
+  },
+  {
+   "default": "0",
+   "fieldname": "hra",
+   "fieldtype": "Currency",
+   "label": "HRA"
+  },
+  {
+   "fieldname": "allowances",
+   "fieldtype": "Table",
+   "label": "Allowances",
+   "options": "Salary Slip Allowance"
+  },
+  {
+   "fieldname": "deductions",
+   "fieldtype": "Table",
+   "label": "Deductions",
+   "options": "Salary Slip Deduction"
+  },
+  {
+   "default": "0",
+   "fieldname": "gross_pay",
+   "fieldtype": "Currency",
+   "label": "Gross Pay"
+  },
+  {
+   "default": "0",
+   "fieldname": "absent_days",
+   "fieldtype": "Float",
+   "label": "Absent Days"
+  },
+  {
+   "default": "0",
+   "fieldname": "unpaid_leave_days",
+   "fieldtype": "Float",
+   "label": "Unpaid Leave Days"
+  },
+  {
+   "default": "0",
+   "fieldname": "lop_days",
+   "fieldtype": "Float",
+   "label": "LOP Days"
+  },
+  {
+   "default": "0",
+   "fieldname": "lop_deduction",
+   "fieldtype": "Currency",
+   "label": "LOP Deduction"
+  },
+  {
+   "default": "0",
+   "fieldname": "leave_deduction",
+   "fieldtype": "Currency",
+   "label": "Leave Deduction"
+  },
+  {
+   "default": "0",
+   "fieldname": "net_pay",
+   "fieldtype": "Currency",
+   "label": "Net Pay"
+  },
+  {
+   "default": "Draft",
+   "fieldname": "select",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Draft\nSubmitted\nPaid"
+  },
+  {
+   "default": "Pending",
+   "fieldname": "email_status",
+   "fieldtype": "Select",
+   "label": "Email Status",
+   "options": "Pending\nSent\nFailed"
+  },
+  {
+   "fieldname": "email_sent_at",
+   "fieldtype": "Datetime",
+   "label": "Email Sent At"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-09-04 16:35:38.858284",
+ "modified_by": "Administrator",
+ "module": "Employee Management System",
+ "name": "Salary Slip",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

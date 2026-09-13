@@ -1,0 +1,173 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "CHECKIN-.######",
+ "creation": "2026-09-09 10:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "employee",
+  "employee_name",
+  "time",
+  "log_type",
+  "shift",
+  "shift_start",
+  "shift_end",
+  "skip_auto_attendance",
+  "attendance",
+  "device_id",
+  "attendance_source",
+  "latitude",
+  "longitude",
+  "accuracy",
+  "distance_from_office",
+  "office_location",
+  "is_auto_clock_out",
+  "clock_out_reason"
+ ],
+ "fields": [
+  {
+   "fieldname": "employee",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Employee",
+   "options": "Employee",
+   "reqd": 1
+  },
+  {
+   "fetch_from": "employee.full_name",
+   "fieldname": "employee_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Employee Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "time",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Timestamp",
+   "reqd": 1
+  },
+  {
+   "fieldname": "log_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Log Type",
+   "options": "IN\nOUT",
+   "reqd": 1
+  },
+  {
+   "fieldname": "shift",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Shift",
+   "options": "Shift Type"
+  },
+  {
+   "fieldname": "shift_start",
+   "fieldtype": "Datetime",
+   "label": "Shift Start"
+  },
+  {
+   "fieldname": "shift_end",
+   "fieldtype": "Datetime",
+   "label": "Shift End"
+  },
+  {
+   "default": "0",
+   "fieldname": "skip_auto_attendance",
+   "fieldtype": "Check",
+   "label": "Skip Auto Attendance"
+  },
+  {
+   "fieldname": "attendance",
+   "fieldtype": "Link",
+   "label": "Attendance",
+   "options": "Attendance"
+  },
+  {
+   "fieldname": "device_id",
+   "fieldtype": "Data",
+   "label": "Device ID"
+  },
+  {
+   "default": "GPS Web Clock",
+   "fieldname": "attendance_source",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Attendance Source"
+  },
+  {
+   "fieldname": "latitude",
+   "fieldtype": "Float",
+   "label": "Latitude",
+   "precision": "6"
+  },
+  {
+   "fieldname": "longitude",
+   "fieldtype": "Float",
+   "label": "Longitude",
+   "precision": "6"
+  },
+  {
+   "fieldname": "accuracy",
+   "fieldtype": "Float",
+   "label": "Accuracy (Meters)"
+  },
+  {
+   "fieldname": "distance_from_office",
+   "fieldtype": "Float",
+   "label": "Distance From Office (Meters)"
+  },
+  {
+   "fieldname": "office_location",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Office Location",
+   "options": "Office Location"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_auto_clock_out",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Is Auto Clock Out"
+  },
+  {
+   "fieldname": "clock_out_reason",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Clock Out Reason",
+   "options": "\nLeft Office Location\nShift Completed"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-09-09 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Employee Management System",
+ "name": "Employee Checkin",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "time",
+ "sort_order": "DESC",
+ "states": []
+}
+

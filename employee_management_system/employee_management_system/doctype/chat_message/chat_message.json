@@ -1,0 +1,137 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-09-04 15:25:19.229496",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "user",
+  "role",
+  "conversation_id",
+  "message_type",
+  "user_message",
+  "assistant_message",
+  "generated_sql",
+  "query_status",
+  "created_at",
+  "message",
+  "response",
+  "timestamp",
+  "sources"
+ ],
+ "fields": [
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "User",
+   "options": "User",
+   "reqd": 1
+  },
+  {
+   "fieldname": "role",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Role"
+  },
+  {
+   "fieldname": "conversation_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Conversation ID"
+  },
+  {
+   "fieldname": "message_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Message Type",
+   "options": "user\nassistant\nsql\nerror\nclarification\nknowledge"
+  },
+  {
+   "fieldname": "user_message",
+   "fieldtype": "Text",
+   "label": "User Message"
+  },
+  {
+   "fieldname": "assistant_message",
+   "fieldtype": "Text",
+   "label": "Assistant Message"
+  },
+  {
+   "fieldname": "generated_sql",
+   "fieldtype": "Code",
+   "label": "Generated SQL",
+   "options": "SQL"
+  },
+  {
+   "fieldname": "query_status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Query Status",
+   "options": "success\nerror\nclarification\nnot_applicable"
+  },
+  {
+   "fieldname": "created_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Created At"
+  },
+  {
+   "fieldname": "message",
+   "fieldtype": "Text",
+   "label": "Message (Legacy)"
+  },
+  {
+   "fieldname": "response",
+   "fieldtype": "Text",
+   "label": "Response (Legacy)"
+  },
+  {
+   "fieldname": "timestamp",
+   "fieldtype": "Datetime",
+   "label": "Timestamp (Legacy)"
+  },
+  {
+   "fieldname": "sources",
+   "fieldtype": "Small Text",
+   "label": "Sources"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-09-08 18:49:56.377039",
+ "modified_by": "Administrator",
+ "module": "Employee Management System",
+ "name": "Chat Message",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "All",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}
