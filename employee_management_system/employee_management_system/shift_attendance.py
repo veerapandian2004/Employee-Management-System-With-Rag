@@ -214,10 +214,14 @@ def calculate_working_hours_from_checkins(
 	is_currently_clocked_in = current_in_time is not None
 	total_working_hours = round(total_seconds / 3600.0, 2)
 
+	# If employee is currently clocked in, their active session has NO clock-out yet.
+	# Do not return a previous session's OUT punch as the active session's last_out.
+	effective_last_out = None if is_currently_clocked_in else last_out
+
 	return {
 		"total_working_hours": total_working_hours,
 		"first_in": first_in,
-		"last_out": last_out,
+		"last_out": effective_last_out,
 		"has_valid_checkin": has_valid_checkin,
 		"is_currently_clocked_in": is_currently_clocked_in,
 		"intervals": intervals,
@@ -405,6 +409,7 @@ def upsert_attendance_record(
 	clock_out_reason: Optional[str] = None,
 	auto_clock_out_time: Optional[datetime.datetime] = None,
 	force_status: bool = False,
+	office_location: Optional[str] = None,
 ) -> Dict[str, Any]:
 	"""
 	Upserts an Attendance record into tabAttendance.
@@ -451,39 +456,69 @@ def upsert_attendance_record(
 		"remarks": remarks or f"Auto calculated via Shift Attendance on {now_datetime().strftime('%Y-%m-%d %H:%M:%S')}",
 	}
 
-	# Detect or assign auto clock out tracking
-	if auto_clocked_out is not None:
-		data["auto_clocked_out"] = cint(auto_clocked_out)
-	if clock_out_reason is not None:
-		data["clock_out_reason"] = clock_out_reason
-	if auto_clock_out_time is not None:
-		data["auto_clock_out_time"] = (
-			auto_clock_out_time.strftime("%Y-%m-%d %H:%M:%S")
-			if hasattr(auto_clock_out_time, "strftime")
-			else str(auto_clock_out_time)
-		)
-
-	# Auto-propagate from checkin logs if not explicitly passed
-	if auto_clocked_out is None and checkin_names:
+	# Persist office_location
+	if office_location:
+		data["office_location"] = office_location
+	elif checkin_names:
 		try:
-			auto_checkins = frappe.get_all(
+			first_chk = frappe.get_all(
 				"Employee Checkin",
-				filters={"name": ["in", checkin_names], "is_auto_clock_out": 1, "log_type": "OUT"},
-				fields=["name", "clock_out_reason", "time"],
-				order_by="time desc",
+				filters={"name": ["in", checkin_names]},
+				fields=["office_location"],
+				order_by="time asc",
 				limit=1,
 			)
-			if auto_checkins:
-				data["auto_clocked_out"] = 1
-				data["clock_out_reason"] = auto_checkins[0].get("clock_out_reason")
-				data["auto_clock_out_time"] = str(auto_checkins[0].get("time"))
+			if first_chk and first_chk[0].get("office_location"):
+				data["office_location"] = first_chk[0].get("office_location")
 		except Exception:
 			pass
+
+	if out_time is None:
+		data["out_time"] = None
+		data["auto_clocked_out"] = 0
+		data["clock_out_reason"] = None
+		data["auto_clock_out_time"] = None
+	else:
+		# Detect or assign auto clock out tracking
+		if auto_clocked_out is not None:
+			data["auto_clocked_out"] = cint(auto_clocked_out)
+		if clock_out_reason is not None:
+			data["clock_out_reason"] = clock_out_reason
+		if auto_clock_out_time is not None:
+			data["auto_clock_out_time"] = (
+				auto_clock_out_time.strftime("%Y-%m-%d %H:%M:%S")
+				if hasattr(auto_clock_out_time, "strftime")
+				else str(auto_clock_out_time)
+			)
+
+		# Auto-propagate from checkin logs if not explicitly passed
+		if auto_clocked_out is None and checkin_names:
+			try:
+				auto_checkins = frappe.get_all(
+					"Employee Checkin",
+					filters={"name": ["in", checkin_names], "is_auto_clock_out": 1, "log_type": "OUT"},
+					fields=["name", "clock_out_reason", "time"],
+					order_by="time desc",
+					limit=1,
+				)
+				if auto_checkins:
+					data["auto_clocked_out"] = 1
+					data["clock_out_reason"] = auto_checkins[0].get("clock_out_reason")
+					data["auto_clock_out_time"] = str(auto_checkins[0].get("time"))
+			except Exception:
+				pass
 
 	if existing_name:
 		doc = frappe.get_doc("Attendance", existing_name)
 		doc.update(data)
 		doc.save(ignore_permissions=True)
+		if data.get("out_time") is None:
+			frappe.db.set_value("Attendance", existing_name, {
+				"out_time": None,
+				"auto_clocked_out": 0,
+				"clock_out_reason": None,
+				"auto_clock_out_time": None,
+			}, update_modified=False)
 		action = "updated"
 	else:
 		doc = frappe.get_doc({"doctype": "Attendance", **data})
@@ -603,13 +638,16 @@ def process_attendance_for_employee_shift(
 			remarks += " | Early Exit"
 
 	# 9. Upsert to Attendance (Duplicate prevention & priority guard)
+	is_clocked_in_now = calc_res.get("is_currently_clocked_in", False)
+	effective_out = None if is_clocked_in_now else last_out
+
 	upsert_res = upsert_attendance_record(
 		employee=employee,
 		attendance_date=attendance_date,
 		status=status,
 		shift=shift_type_name,
 		in_time=first_in,
-		out_time=last_out,
+		out_time=effective_out,
 		working_hours=total_working_hours,
 		late_entry=late_entry,
 		early_exit=early_exit,
@@ -617,6 +655,7 @@ def process_attendance_for_employee_shift(
 		leave_type=leave_type,
 		remarks=remarks,
 		checkin_names=log_names,
+		auto_clocked_out=0 if is_clocked_in_now else None,
 		force_status=force_status,
 	)
 

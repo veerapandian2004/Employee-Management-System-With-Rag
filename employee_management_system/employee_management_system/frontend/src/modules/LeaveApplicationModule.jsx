@@ -80,6 +80,18 @@ export function LeaveApplicationModule({
     return false;
   };
 
+  const isSelfLeave = (app) => {
+    if (!app) return false;
+    const myEmpId = currentUser?.employee?.name || currentUser?.employee?.naming_series;
+    const myFullName = currentUser?.full_name;
+    const myEmail = currentUser?.email || currentUser?.employee?.email || currentUser?.user;
+    return Boolean(
+      (myEmpId && (app.employee === myEmpId || app.employee_name === myEmpId)) ||
+      (myFullName && app.employee_name === myFullName) ||
+      (myEmail && (app.employee === myEmail || app.employee_email === myEmail))
+    );
+  };
+
   const handleOpenApply = () => {
     setIsAddOpen(true);
   };
@@ -112,9 +124,11 @@ export function LeaveApplicationModule({
               : "Submit time-off requests, track approval status, and view historical leaves"}
           </p>
         </div>
-        <Button onClick={handleOpenApply} className="bg-indigo-600 hover:bg-indigo-700 font-semibold shadow-md cursor-pointer">
-          <Plus className="mr-2 h-4 w-4" /> Apply for Leave
-        </Button>
+        {userRole !== "Administrator" && (
+          <Button onClick={handleOpenApply} className="bg-indigo-600 hover:bg-indigo-700 font-semibold shadow-md cursor-pointer">
+            <Plus className="mr-2 h-4 w-4" /> Apply for Leave
+          </Button>
+        )}
       </div>
 
       {/* KPI Cards */}
@@ -257,26 +271,32 @@ export function LeaveApplicationModule({
                   </TableCell>
                   <TableCell className="text-right space-x-1">
                     {canApprove && app.status === "Pending" && (
-                      <>
-                        <Button
-                          size="sm"
-                          variant="success"
-                          className="h-8 text-xs px-2 cursor-pointer"
-                          onClick={() => onUpdateLeaveStatus(app.name, "Approved")}
-                          title="Approve Leave"
-                        >
-                          <CheckCircle2 className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          className="h-8 text-xs px-2 cursor-pointer"
-                          onClick={() => onUpdateLeaveStatus(app.name, "Rejected")}
-                          title="Reject Leave"
-                        >
-                          <XCircle className="h-3.5 w-3.5" />
-                        </Button>
-                      </>
+                      isSelfLeave(app) && userRole !== "Administrator" ? (
+                        <span className="inline-block px-2 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 rounded border border-amber-300 dark:border-amber-800 mr-1">
+                          Awaiting Admin
+                        </span>
+                      ) : (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="success"
+                            className="h-8 text-xs px-2 cursor-pointer"
+                            onClick={() => onUpdateLeaveStatus(app.name, "Approved")}
+                            title="Approve Leave"
+                          >
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            className="h-8 text-xs px-2 cursor-pointer"
+                            onClick={() => onUpdateLeaveStatus(app.name, "Rejected")}
+                            title="Reject Leave"
+                          >
+                            <XCircle className="h-3.5 w-3.5" />
+                          </Button>
+                        </>
+                      )
                     )}
                     {canCancelApp(app) && (
                       <Button
@@ -358,15 +378,17 @@ export function LeaveApplicationModule({
       </Dialog>
 
       {/* Apply Leave Modal */}
-      <ApplyLeaveDialog
-        isOpen={isAddOpen}
-        onClose={() => setIsAddOpen(false)}
-        onAddLeaveApplication={onAddLeaveApplication}
-        leaveTypes={leaveTypes}
-        employees={employees}
-        userRole={userRole}
-        currentUser={currentUser}
-      />
+      {userRole !== "Administrator" && (
+        <ApplyLeaveDialog
+          isOpen={isAddOpen}
+          onClose={() => setIsAddOpen(false)}
+          onAddLeaveApplication={onAddLeaveApplication}
+          leaveTypes={leaveTypes}
+          employees={employees}
+          userRole={userRole}
+          currentUser={currentUser}
+        />
+      )}
     </div>
   );
 }

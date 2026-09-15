@@ -39,6 +39,7 @@ if not frappe.db:
 from employee_management_system.employee_management_system.attendance.auto_clock_out_service import (
 	REASON_LEFT_OFFICE,
 	REASON_SHIFT_COMPLETED,
+	REASON_AUTO_CLOCK_OUT,
 	auto_clock_out_employee,
 	check_location_auto_clock_out,
 	check_shift_completion_auto_clock_out,
@@ -61,7 +62,7 @@ class TestAutoClockOut(unittest.TestCase):
 	def setUpClass(cls):
 		frappe.set_user("Administrator")
 
-		# 1. Ensure Main Office exists (150m allowed radius)
+		# 1. Ensure Main Office and Office A exist
 		if not frappe.db.exists("Office Location", "Main Office"):
 			frappe.get_doc({
 				"doctype": "Office Location",
@@ -81,6 +82,18 @@ class TestAutoClockOut(unittest.TestCase):
 				"is_active": 1,
 			})
 
+		if not frappe.db.exists("Office Location", "Office A"):
+			frappe.get_doc({
+				"doctype": "Office Location",
+				"office_name": "Office A",
+				"latitude": 11.056839,
+				"longitude": 76.944754,
+				"allowed_radius": 150.0,
+				"max_accuracy": 50.0,
+				"is_active": 1,
+				"address": "Office A Building",
+			}).insert(ignore_permissions=True)
+
 		# 2. Ensure test shift types exist
 		if not frappe.db.exists("Shift Type", "Test Day Shift"):
 			frappe.get_doc({
@@ -88,6 +101,19 @@ class TestAutoClockOut(unittest.TestCase):
 				"shift_name": "Test Day Shift",
 				"start_time": "09:00:00",
 				"end_time": "17:00:00",
+				"enable_auto_attendance": 1,
+				"late_entry_grace_period": 15,
+				"early_exit_grace_period": 15,
+				"working_hours_threshold_for_half_day": 4.0,
+				"working_hours_threshold_for_present": 8.0,
+			}).insert(ignore_permissions=True)
+
+		if not frappe.db.exists("Shift Type", "Test 9 to 6 Shift"):
+			frappe.get_doc({
+				"doctype": "Shift Type",
+				"shift_name": "Test 9 to 6 Shift",
+				"start_time": "09:00:00",
+				"end_time": "18:00:00",
 				"enable_auto_attendance": 1,
 				"late_entry_grace_period": 15,
 				"early_exit_grace_period": 15,
@@ -531,6 +557,205 @@ class TestAutoClockOut(unittest.TestCase):
 		self.assertTrue(status_payload["auto_clocked_out"])
 		self.assertEqual(status_payload["clock_out_reason"], REASON_LEFT_OFFICE)
 		self.assertIsNotNone(status_payload["auto_clock_out_time"])
+
+	# -------------------------------------------------------------
+	# 7. USER SCENARIO: SHIFT 9:00 AM - 6:00 PM AUTO CLOCK-OUT AT OFFICE A
+	# -------------------------------------------------------------
+	def test_11_user_example_shift_completion_auto_clockout_at_same_office(self):
+		"""
+		User Scenario:
+		Shift: 9:00 AM – 6:00 PM
+		Clock-in: 8:55 AM at Office A
+		No manual clock-out: At 6:00 PM, the system automatically clocks the employee out at Office A.
+		- Recorded against the same office/location (Office A)
+		- Marked as 'Auto Clock-Out' on tabAttendance
+		"""
+		target_date = datetime.date(2026, 9, 15)
+		shift_start = datetime.datetime.combine(target_date, datetime.time(9, 0, 0))
+		shift_end = datetime.datetime.combine(target_date, datetime.time(18, 0, 0))
+		clock_in_time = datetime.datetime.combine(target_date, datetime.time(8, 55, 0))
+
+		# Assign Shift 9-6 to EMP-001
+		frappe.db.sql("DELETE FROM `tabShift Assignment` WHERE employee = 'EMP-001'")
+		frappe.get_doc({
+			"doctype": "Shift Assignment",
+			"employee": "EMP-001",
+			"shift_type": "Test 9 to 6 Shift",
+			"start_date": target_date,
+			"status": "Active",
+		}).insert(ignore_permissions=True)
+
+		# 1. Clock-in at 8:55 AM at Office A
+		office_a = frappe.get_doc("Office Location", "Office A")
+		chk_in = frappe.get_doc({
+			"doctype": "Employee Checkin",
+			"employee": "EMP-001",
+			"employee_name": "Test Auto Employee",
+			"time": clock_in_time,
+			"log_type": "IN",
+			"shift": "Test 9 to 6 Shift",
+			"shift_start": shift_start,
+			"shift_end": shift_end,
+			"latitude": office_a.latitude,
+			"longitude": office_a.longitude,
+			"accuracy": 10.0,
+			"distance_from_office": 2.0,
+			"office_location": "Office A",
+		}).insert(ignore_permissions=True)
+		frappe.db.commit()
+
+		# Assert clock-in is registered and employee is clocked in
+		is_in, latest_chk = is_employee_clocked_in("EMP-001")
+		self.assertTrue(is_in)
+		self.assertEqual(latest_chk.get("office_location"), "Office A")
+		self.assertEqual(str(latest_chk.get("time")), str(clock_in_time))
+
+		# 2. Reaching 6:00 PM: check shift completion automatic clock out
+		results = check_shift_completion_auto_clock_out(
+			target_date=target_date,
+			employee_id="EMP-001",
+			current_time=shift_end,
+		)
+		self.assertEqual(len(results), 1)
+		self.assertTrue(results[0]["auto_clocked_out"])
+		self.assertEqual(results[0]["reason"], REASON_SHIFT_COMPLETED)
+		self.assertEqual(str(results[0]["clock_out_time"]), str(shift_end))
+
+		# 3. Verify OUT checkin: must be at 6:00 PM and against the SAME Office A
+		latest_out = get_latest_checkin("EMP-001")
+		self.assertEqual(latest_out.get("log_type"), "OUT")
+		self.assertEqual(str(latest_out.get("time")), str(shift_end))
+		self.assertEqual(latest_out.get("office_location"), "Office A", "Auto clock-out must be recorded against the same Office A")
+		self.assertEqual(latest_out.get("is_auto_clock_out"), 1)
+		self.assertEqual(latest_out.get("clock_out_reason"), REASON_SHIFT_COMPLETED)
+
+		# 4. Verify Attendance: marked as Auto Clock-Out at Office A
+		att = frappe.db.get_value(
+			"Attendance",
+			{"employee": "EMP-001", "attendance_date": target_date},
+			[
+				"name",
+				"in_time",
+				"out_time",
+				"working_hours",
+				"status",
+				"office_location",
+				"auto_clocked_out",
+				"clock_out_reason",
+				"auto_clock_out_time",
+				"remarks",
+			],
+			as_dict=True,
+		)
+		self.assertIsNotNone(att)
+		self.assertEqual(str(att.in_time), str(clock_in_time))
+		self.assertEqual(str(att.out_time), str(shift_end))
+		self.assertEqual(att.office_location, "Office A", "Attendance office_location must be Office A")
+		self.assertEqual(att.auto_clocked_out, 1, "Attendance must be marked with auto_clocked_out = 1")
+		self.assertEqual(att.clock_out_reason, REASON_SHIFT_COMPLETED)
+		self.assertEqual(str(att.auto_clock_out_time), str(shift_end))
+		self.assertEqual(att.status, "Present")
+		self.assertIn("Auto clocked out", att.remarks)
+
+	def test_12_manual_clockout_prevents_duplicate_auto_clockout(self):
+		"""
+		If the employee has already clocked out manually,
+		the system should NOT create a duplicate clock-out when shift end time is reached.
+		"""
+		target_date = datetime.date(2026, 9, 15)
+		shift_start = datetime.datetime.combine(target_date, datetime.time(9, 0, 0))
+		shift_end = datetime.datetime.combine(target_date, datetime.time(18, 0, 0))
+		clock_in_time = datetime.datetime.combine(target_date, datetime.time(8, 55, 0))
+		manual_clock_out_time = datetime.datetime.combine(target_date, datetime.time(17, 50, 0))
+
+		# Assign Shift 9-6 to EMP-001
+		frappe.db.sql("DELETE FROM `tabShift Assignment` WHERE employee = 'EMP-001'")
+		frappe.get_doc({
+			"doctype": "Shift Assignment",
+			"employee": "EMP-001",
+			"shift_type": "Test 9 to 6 Shift",
+			"start_date": target_date,
+			"status": "Active",
+		}).insert(ignore_permissions=True)
+
+		# 1. Clock-in at 8:55 AM at Office A
+		frappe.get_doc({
+			"doctype": "Employee Checkin",
+			"employee": "EMP-001",
+			"employee_name": "Test Auto Employee",
+			"time": clock_in_time,
+			"log_type": "IN",
+			"shift": "Test 9 to 6 Shift",
+			"shift_start": shift_start,
+			"shift_end": shift_end,
+			"office_location": "Office A",
+		}).insert(ignore_permissions=True)
+
+		# 2. Manual Clock-out at 5:50 PM at Office A (before 6:00 PM shift end)
+		frappe.get_doc({
+			"doctype": "Employee Checkin",
+			"employee": "EMP-001",
+			"employee_name": "Test Auto Employee",
+			"time": manual_clock_out_time,
+			"log_type": "OUT",
+			"shift": "Test 9 to 6 Shift",
+			"shift_start": shift_start,
+			"shift_end": shift_end,
+			"device_id": "GPS Web Clock",
+			"attendance_source": "GPS Web Clock",
+			"office_location": "Office A",
+			"is_auto_clock_out": 0,
+		}).insert(ignore_permissions=True)
+		frappe.db.commit()
+
+		# Verify currently clocked out
+		is_in, latest_chk = is_employee_clocked_in("EMP-001")
+		self.assertFalse(is_in, "Employee has clocked out manually.")
+		self.assertEqual(latest_chk.get("log_type"), "OUT")
+
+		# 3. Scheduled shift end time (6:00 PM) is reached: run auto clock-out check
+		results = check_shift_completion_auto_clock_out(
+			target_date=target_date,
+			employee_id="EMP-001",
+			current_time=shift_end,
+		)
+
+		# System must NOT create a duplicate clock-out!
+		self.assertEqual(len(results), 0, "No auto clock-out should be triggered for manually clocked out employee.")
+
+		# Ensure exactly 2 checkins exist (1 IN, 1 OUT)
+		checkin_count = frappe.db.count("Employee Checkin", {"employee": "EMP-001"})
+		self.assertEqual(checkin_count, 2, "Only 1 IN and 1 OUT checkin should exist.")
+
+		# Latest checkin remains the manual clock-out at 5:50 PM
+		latest = get_latest_checkin("EMP-001")
+		self.assertEqual(str(latest.get("time")), str(manual_clock_out_time))
+		self.assertEqual(latest.get("is_auto_clock_out"), 0)
+
+	def test_13_auto_clock_out_reason_accepted(self):
+		"""
+		Accepts 'Auto Clock-Out' as a valid reason in addition to 'Shift Completed'.
+		"""
+		clock_in_time = now_datetime() - datetime.timedelta(hours=4)
+		frappe.get_doc({
+			"doctype": "Employee Checkin",
+			"employee": "EMP-001",
+			"time": clock_in_time,
+			"log_type": "IN",
+			"shift": "Test Day Shift",
+			"office_location": "Office A",
+		}).insert(ignore_permissions=True)
+
+		out_res = auto_clock_out_employee(
+			employee_id="EMP-001",
+			reason=REASON_AUTO_CLOCK_OUT,
+		)
+		self.assertEqual(out_res["status"], "clocked_out")
+		self.assertEqual(out_res["reason"], REASON_AUTO_CLOCK_OUT)
+
+		latest = get_latest_checkin("EMP-001")
+		self.assertEqual(latest.get("clock_out_reason"), REASON_AUTO_CLOCK_OUT)
+		self.assertEqual(latest.get("office_location"), "Office A")
 
 
 if __name__ == "__main__":

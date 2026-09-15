@@ -1040,6 +1040,19 @@ export async function apiMarkAllNotificationsRead() {
   return await handleResponse(res);
 }
 
+export async function apiClearNotifications(notificationName = null) {
+  const res = await fetch(
+    `${BASE_URL}/api/method/employee_management_system.employee_management_system.api.clear_notifications`,
+    {
+      method: "POST",
+      headers: getHeaders({ "Content-Type": "application/json" }),
+      credentials: "include",
+      body: JSON.stringify({ notification_name: notificationName || "all" })
+    }
+  );
+  return await handleResponse(res);
+}
+
 
 // ---------------- CHAT SESSIONS ----------------
 export async function apiFetchChatSessions() {

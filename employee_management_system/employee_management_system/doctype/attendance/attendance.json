@@ -11,6 +11,7 @@
   "attendance_date",
   "status",
   "shift",
+  "office_location",
   "in_time",
   "out_time",
   "working_hours",
@@ -52,7 +53,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Status",
-   "options": "Present\nAbsent\nHalf Day\nOn Leave\nWeekly Off\nHoliday",
+   "options": "Present\nAbsent\nHalf Day\nOn Leave\nHoliday\nWeekly Off",
    "reqd": 1
   },
   {
@@ -61,6 +62,13 @@
    "in_list_view": 1,
    "label": "Shift",
    "options": "Shift Type"
+  },
+  {
+   "fieldname": "office_location",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Office Location",
+   "options": "Office Location"
   },
   {
    "fieldname": "in_time",
@@ -107,7 +115,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Clock Out Reason",
-   "options": "\nLeft Office Location\nShift Completed"
+   "options": "\nAuto Clock-Out\nLeft Office Location\nShift Completed"
   },
   {
    "fieldname": "auto_clock_out_time",
@@ -161,4 +169,3 @@
  "sort_order": "DESC",
  "states": []
 }
-

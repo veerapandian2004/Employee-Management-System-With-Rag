@@ -41,7 +41,8 @@ from employee_management_system.employee_management_system.attendance.checkin_se
 
 REASON_LEFT_OFFICE = "Left Office Location"
 REASON_SHIFT_COMPLETED = "Shift Completed"
-VALID_REASONS = {REASON_LEFT_OFFICE, REASON_SHIFT_COMPLETED}
+REASON_AUTO_CLOCK_OUT = "Auto Clock-Out"
+VALID_REASONS = {REASON_LEFT_OFFICE, REASON_SHIFT_COMPLETED, REASON_AUTO_CLOCK_OUT}
 
 
 def is_employee_clocked_in(employee_id: str) -> Tuple[bool, Optional[Dict[str, Any]]]:
@@ -65,11 +66,11 @@ def auto_clock_out_employee(
 ) -> Dict[str, Any]:
 	"""
 	Executes an automatic clock-out for the given employee:
-	1. Validates reason ('Left Office Location' or 'Shift Completed')
+	1. Validates reason ('Left Office Location', 'Shift Completed', or 'Auto Clock-Out')
 	2. Verifies employee is currently clocked in (avoids duplicate clock-outs)
 	3. Determines exact clock-out timestamp (current time or shift end time)
-	4. Inserts OUT Employee Checkin record with auto clock-out metadata
-	5. Recalculates and upserts Attendance record with reason, auto flag, and exact timestamp
+	4. Inserts OUT Employee Checkin record recorded against the SAME office/location as clock-in
+	5. Recalculates and upserts Attendance record with reason, auto flag, office location, and exact timestamp
 	6. Emits notifications to both employee and administrators
 	"""
 	if reason not in VALID_REASONS:
@@ -107,17 +108,31 @@ def auto_clock_out_employee(
 
 	emp_name = emp.get("full_name") or employee_id
 
-	# Resolve assigned office
-	office_name = None
-	try:
-		office_doc = get_assigned_office(emp)
-		office_name = office_doc.name
-		if latitude is None and office_doc:
-			# Default coordinates for shift completion
+	# Resolve office: Priority to the clock-in punch's office location so clock-out is recorded against the same office
+	office_name = latest_chk.get("office_location") if latest_chk else None
+	office_doc = None
+	if office_name and frappe.db.exists("Office Location", office_name):
+		office_doc = frappe.get_doc("Office Location", office_name)
+	elif not office_name:
+		try:
+			office_doc = get_assigned_office(emp)
+			office_name = office_doc.name
+		except Exception:
+			office_name = emp.get("office_location")
+
+	if latitude is None:
+		if latest_chk and latest_chk.get("latitude") is not None:
+			latitude = latest_chk.get("latitude")
+			longitude = latest_chk.get("longitude")
+		elif office_doc:
 			latitude = office_doc.latitude
 			longitude = office_doc.longitude
-	except Exception:
-		office_name = emp.get("office_location")
+
+	if accuracy is None and latest_chk:
+		accuracy = latest_chk.get("accuracy")
+
+	if distance is None:
+		distance = latest_chk.get("distance_from_office") if latest_chk else 0.0
 
 	# Resolve active shift
 	from employee_management_system.employee_management_system.shift_attendance import (
@@ -194,6 +209,7 @@ def auto_clock_out_employee(
 				"auto_clocked_out": 1,
 				"clock_out_reason": reason,
 				"auto_clock_out_time": clock_out_datetime.strftime("%Y-%m-%d %H:%M:%S"),
+				"office_location": office_name,
 				"remarks": updated_remarks,
 			},
 			update_modified=True,
@@ -230,6 +246,7 @@ def auto_clock_out_employee(
 			auto_clocked_out=1,
 			clock_out_reason=reason,
 			auto_clock_out_time=clock_out_datetime,
+			office_location=office_name,
 			remarks=remarks,
 			checkin_names=log_names,
 		)
@@ -243,6 +260,7 @@ def auto_clock_out_employee(
 				"auto_clocked_out": 1,
 				"clock_out_reason": reason,
 				"auto_clock_out_time": clock_out_datetime.strftime("%Y-%m-%d %H:%M:%S"),
+				"office_location": office_name,
 			},
 			update_modified=False,
 		)
@@ -363,18 +381,20 @@ def check_location_auto_clock_out(
 def check_shift_completion_auto_clock_out(
 	target_date: Optional[Union[datetime.date, str]] = None,
 	employee_id: Optional[str] = None,
+	current_time: Optional[Union[datetime.datetime, str]] = None,
 ) -> List[Dict[str, Any]]:
 	"""
 	Rule 2: Shift completion automatic clock-out:
 	If an employee is still clocked in when their scheduled shift ends,
-	automatically clock them out at the shift end time.
+	automatically clock them out at the shift end time recorded against the same office location.
+	If the employee has already clocked out manually, no duplicate clock-out is created.
 	"""
 	from employee_management_system.employee_management_system.shift_attendance import (
 		get_active_shift_assignments,
 		get_shift_window,
 	)
 
-	now_dt = now_datetime()
+	now_dt = get_datetime(current_time) if current_time else now_datetime()
 	current_date = getdate(target_date) if target_date else now_dt.date()
 	yesterday_date = current_date - datetime.timedelta(days=1)
 
@@ -392,30 +412,34 @@ def check_shift_completion_auto_clock_out(
 		if not is_in or not latest_chk:
 			continue
 
-		# Check shift assignments for yesterday (for overnight) and today
-		assigned_shifts = get_active_shift_assignments(current_date, employee=eid)
-		if not assigned_shifts:
-			assigned_shifts = get_active_shift_assignments(yesterday_date, employee=eid)
+		# Resolve shift: check latest_chk first, then active shift assignments
+		shift_name = latest_chk.get("shift")
+		if not shift_name:
+			assigned_shifts = get_active_shift_assignments(current_date, employee=eid)
+			if not assigned_shifts:
+				assigned_shifts = get_active_shift_assignments(yesterday_date, employee=eid)
+			if assigned_shifts:
+				shift_name = assigned_shifts[0]["shift_type"]
 
-		if not assigned_shifts:
-			continue
-
-		shift_name = assigned_shifts[0]["shift_type"]
-		if not frappe.db.exists("Shift Type", shift_name):
+		if not shift_name or not frappe.db.exists("Shift Type", shift_name):
 			continue
 
 		sdoc = frappe.get_doc("Shift Type", shift_name)
-		# Test both current date and yesterday's date
-		shift_start, shift_end, _, _, is_overnight = get_shift_window(sdoc, current_date)
 
-		# If overnight and shift started yesterday
+		# Resolve shift window and scheduled shift_end
 		chk_time = get_datetime(latest_chk.get("time"))
-		if chk_time.date() < current_date:
-			shift_start, shift_end, _, _, is_overnight = get_shift_window(sdoc, chk_time.date())
+		eval_date = chk_time.date() if chk_time else current_date
 
-		# Check condition: if current time is at or past shift_end, and employee is still clocked in
-		if now_dt >= shift_end:
-			# Auto clock out at exact shift_end timestamp
+		if latest_chk.get("shift_end"):
+			shift_end = get_datetime(latest_chk.get("shift_end"))
+		else:
+			shift_start, shift_end, _, _, is_overnight = get_shift_window(sdoc, eval_date)
+
+		# Check condition: if current time is at or past scheduled shift_end, and employee is still clocked in
+		# Only auto clock out at shift_end if the active clock-in occurred before shift_end.
+		# If the employee clocked in after shift_end, do not clock them out with a past shift_end timestamp.
+		if now_dt >= shift_end and chk_time < shift_end:
+			# Auto clock out at exact shift_end timestamp against the SAME office location
 			clock_out_res = auto_clock_out_employee(
 				employee_id=eid,
 				reason=REASON_SHIFT_COMPLETED,

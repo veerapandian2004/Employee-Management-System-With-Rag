@@ -51,6 +51,11 @@ export function ApplyLeaveDialog({
   const defaultEmpId = defaultEmp ? (defaultEmp.naming_series || defaultEmp.name) : "";
   const defaultEmpName = defaultEmp ? defaultEmp.full_name : "";
 
+  const adminEmpRecord = employees.find((e) => e.name === "EMP-001" || e.naming_series === "EMP-001" || e.designation?.includes("Admin"));
+  const defaultApproverId = userRole === "HR"
+    ? (adminEmpRecord?.naming_series || adminEmpRecord?.name || "EMP-001")
+    : (employees.find((e) => e.designation?.includes("HR") || e.designation?.includes("Director") || e.name === "EMP-001")?.name || "");
+
   const initialForm = {
     employee: defaultEmpId,
     employee_name: defaultEmpName,
@@ -60,7 +65,7 @@ export function ApplyLeaveDialog({
     total_days: 1,
     reason: "",
     status: "Pending",
-    approver: employees.find((e) => e.designation?.includes("HR") || e.designation?.includes("Director") || e.name === "EMP-001")?.name || "",
+    approver: defaultApproverId,
   };
 
   const [formData, setFormData] = useState(initialForm);
@@ -99,7 +104,7 @@ export function ApplyLeaveDialog({
         total_days: 1,
         reason: "",
         status: "Pending",
-        approver: employees.find((e) => e.designation?.includes("HR") || e.designation?.includes("Director") || e.name === "EMP-001")?.name || "",
+        approver: defaultApproverId,
       });
       setErrorMsg("");
       setSubmitting(false);
@@ -298,7 +303,19 @@ export function ApplyLeaveDialog({
           />
         </div>
 
-        {canApprove && (
+        {userRole === "HR" ? (
+          <div>
+            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+              Required Approver
+            </label>
+            <div className="p-2.5 rounded-md bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-200 flex items-center justify-between">
+              <span className="font-semibold">Administrator</span>
+              <span className="text-[10px] font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-800">
+                Administrator Approval Required for HR
+              </span>
+            </div>
+          </div>
+        ) : canApprove ? (
           <div>
             <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">Assigned Approver</label>
             <Select
@@ -313,7 +330,7 @@ export function ApplyLeaveDialog({
               ))}
             </Select>
           </div>
-        )}
+        ) : null}
 
         <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-end space-x-3">
           <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>

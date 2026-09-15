@@ -139,7 +139,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Clock Out Reason",
-   "options": "\nLeft Office Location\nShift Completed"
+   "options": "\nAuto Clock-Out\nLeft Office Location\nShift Completed"
   }
  ],
  "grid_page_length": 50,

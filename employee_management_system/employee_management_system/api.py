@@ -131,6 +131,22 @@ def _get_user_app_role(user=None):
 	return "Employee"
 
 
+def _is_hr_employee(emp_name):
+	if not emp_name:
+		return False
+	emp = frappe.db.get_value("Employee", emp_name, ["user_id", "email", "designation"], as_dict=True)
+	if not emp:
+		return False
+	if emp.get("designation") and any(h in emp["designation"].upper() for h in ["HR", "HUMAN RESOURCE"]):
+		return True
+	user = emp.get("user_id") or emp.get("email")
+	if user and frappe.db.exists("User", user):
+		roles = frappe.get_roles(user)
+		if any(r in roles for r in ["HR Manager", "HR User", "HR", "Admin / HR Manager", "HR Executive"]):
+			return True
+	return False
+
+
 def _get_linked_employee(user=None):
 	if not user:
 		user = frappe.session.user
@@ -969,6 +985,23 @@ def create_leave_application(data):
 		data["status"] = "Pending"
 		if not data.get("approver") and linked_emp.get("reporting_manager"):
 			data["approver"] = linked_emp.get("reporting_manager")
+	elif app_role == "HR":
+		target_emp = data.get("employee")
+		resolved_emp = _resolve_employee_link(target_emp) if target_emp else None
+		hr_name = linked_emp.get("name") if linked_emp else None
+		hr_series = linked_emp.get("naming_series") if linked_emp else None
+
+		if not target_emp or target_emp in [hr_name, hr_series] or resolved_emp in [hr_name, hr_series]:
+			data["employee"] = hr_name
+			data["status"] = "Pending"
+			admin_emp = frappe.db.get_value("Employee", {"user_id": "Administrator"}, "name")
+			if not admin_emp:
+				admin_emp = frappe.db.get_value("Employee", {"email": "admin@ems.com"}, "name") or "EMP-001"
+			data["approver"] = admin_emp
+		else:
+			data["employee"] = resolved_emp or target_emp
+			if "approver" in data:
+				data["approver"] = _resolve_employee_link(data.get("approver"))
 	else:
 		if "employee" in data:
 			data["employee"] = _resolve_employee_link(data.get("employee")) or data.get("employee")
@@ -996,7 +1029,7 @@ def create_leave_application(data):
 					is_own_leave = True
 
 			if is_own_leave:
-				frappe.throw(_("Administrators are not permitted to apply for their own leave application."), frappe.PermissionError)
+				frappe.throw(_("Administrators do not apply for leave. Your role is to monitor and review leave requests for employees and HR."), frappe.PermissionError)
 
 	if "leave_type" in data:
 		data["leave_type"] = _resolve_leave_type_link(data.get("leave_type")) or data.get("leave_type")
@@ -1051,13 +1084,29 @@ def update_leave_status(name, status):
 	doc = frappe.get_doc("Leave Application", name)
 	old_status = doc.status
 
-	if app_role not in ["Administrator", "HR"]:
+	if app_role != "Administrator":
 		if not linked_emp:
 			frappe.throw(_("Not permitted to change leave status"), frappe.PermissionError)
 		emp_name = linked_emp.get("name")
-		if doc.employee == emp_name:
-			frappe.throw(_("Employees cannot approve or reject their own leave applications"), frappe.PermissionError)
-		if doc.approver != emp_name:
+		emp_series = linked_emp.get("naming_series")
+		emp_email = linked_emp.get("email")
+
+		# 1. Any non-Administrator user (including HR Manager) CANNOT approve or reject their own leave application
+		if doc.employee in [emp_name, emp_series] or (emp_email and doc.employee == emp_email):
+			frappe.throw(
+				_("You cannot approve or reject your own leave application. HR leave requests must be approved by the Administrator."),
+				frappe.PermissionError,
+			)
+
+		# 2. Leave applications for HR staff MUST be approved by the Administrator
+		if _is_hr_employee(doc.employee):
+			frappe.throw(
+				_("Leave applications for HR staff must be approved by the Administrator."),
+				frappe.PermissionError,
+			)
+
+		# 3. For regular employees (not HR role), verify designated approver
+		if app_role != "HR" and doc.approver != emp_name:
 			frappe.throw(_("Not authorized to approve or reject this leave application"), frappe.PermissionError)
 
 	if status == "Approved":
@@ -2171,6 +2220,7 @@ def get_attendance(employee=None, from_date=None, to_date=None):
 				"attendance_date",
 				"status",
 				"shift",
+				"office_location",
 				"in_time",
 				"out_time",
 				"working_hours",
@@ -2263,9 +2313,12 @@ def employee_checkin(employee=None, timestamp=None, log_type="IN", device_id=Non
 	app_role = _get_user_app_role(user)
 	linked_emp = _get_linked_employee(user)
 
+	if app_role == "Administrator" and not employee:
+		frappe.throw(frappe._("Administrators do not clock in or clock out. Your role is to monitor attendance for HR and Employees."), frappe.PermissionError)
+
 	if app_role == "Employee" or not employee:
 		if not linked_emp:
-			frappe.throw(_("No Employee record linked to your user account."))
+			frappe.throw(frappe._("No Employee record linked to your user account."))
 		emp_id = linked_emp.get("name")
 	else:
 		emp_id = employee
@@ -2278,10 +2331,24 @@ def employee_checkin(employee=None, timestamp=None, log_type="IN", device_id=Non
 	t = get_datetime(timestamp) if timestamp else now_datetime()
 	emp_name = frappe.db.get_value("Employee", emp_id, "full_name") or emp_id
 
+	# Sequence validation
+	from employee_management_system.employee_management_system.attendance.checkin_service import (
+		validate_checkin_sequence,
+	)
+	validate_checkin_sequence(emp_id, log_type)
+
+	# Resolve office location
+	office_location = frappe.db.get_value("Employee", emp_id, "office_location")
+	if not office_location:
+		active_offices = frappe.get_all("Office Location", filters={"is_active": 1}, limit=1)
+		if active_offices:
+			office_location = active_offices[0].name
+
 	# Attempt to resolve current active shift
 	from employee_management_system.employee_management_system.shift_attendance import (
 		get_active_shift_assignments,
 		get_shift_window,
+		process_attendance_for_employee_shift,
 	)
 
 	active_shifts = get_active_shift_assignments(t.date(), employee=emp_id)
@@ -2290,7 +2357,7 @@ def employee_checkin(employee=None, timestamp=None, log_type="IN", device_id=Non
 	shift_end = None
 	if shift_name and frappe.db.exists("Shift Type", shift_name):
 		sdoc = frappe.get_doc("Shift Type", shift_name)
-		s_start, s_end, _, _, _ = get_shift_window(sdoc, t.date())
+		s_start, s_end, *rest = get_shift_window(sdoc, t.date())
 		shift_start = s_start
 		shift_end = s_end
 
@@ -2304,9 +2371,22 @@ def employee_checkin(employee=None, timestamp=None, log_type="IN", device_id=Non
 		"shift_start": shift_start,
 		"shift_end": shift_end,
 		"device_id": device_id or "Web App",
+		"attendance_source": "Web App",
+		"office_location": office_location,
 	})
 	checkin_doc.insert(ignore_permissions=True)
 	frappe.db.commit()
+
+	if shift_name:
+		try:
+			process_attendance_for_employee_shift(
+				employee=emp_id,
+				shift_type_name=shift_name,
+				attendance_date=t.date(),
+			)
+			frappe.db.commit()
+		except Exception as e:
+			frappe.logger().error(f"Error recalculating attendance in employee_checkin for {emp_id}: {e}")
 
 	return checkin_doc.as_dict()
 
@@ -2326,7 +2406,12 @@ def clock_in(latitude=None, longitude=None, accuracy=None):
 	Identifies employee strictly via frappe.session.user.
 	Prevents duplicate Clock IN.
 	"""
-	_check_authenticated()
+	user = _check_authenticated()
+	if user == "Administrator" or _get_user_app_role(user) == "Administrator":
+		frappe.throw(
+			_("Administrators do not clock in or clock out. Your role is to monitor attendance for HR and Employees."),
+			frappe.PermissionError,
+		)
 	from employee_management_system.employee_management_system.attendance.checkin_service import record_gps_checkin
 	return record_gps_checkin(
 		log_type="IN",
@@ -2345,7 +2430,12 @@ def clock_out(latitude=None, longitude=None, accuracy=None):
 	Identifies employee strictly via frappe.session.user.
 	Prevents Clock OUT without an active Clock IN.
 	"""
-	_check_authenticated()
+	user = _check_authenticated()
+	if user == "Administrator" or _get_user_app_role(user) == "Administrator":
+		frappe.throw(
+			_("Administrators do not clock in or clock out. Your role is to monitor attendance for HR and Employees."),
+			frappe.PermissionError,
+		)
 	from employee_management_system.employee_management_system.attendance.checkin_service import record_gps_checkin
 	return record_gps_checkin(
 		log_type="OUT",
@@ -2363,7 +2453,9 @@ def ping_location(latitude=None, longitude=None, accuracy=None):
 	If employee has moved outside permitted office geofence during work hours,
 	automatically clocks them out with reason 'Left Office Location' and sends notifications.
 	"""
-	_check_authenticated()
+	user = _check_authenticated()
+	if user == "Administrator" or _get_user_app_role(user) == "Administrator":
+		return {"exempt": True}
 	from employee_management_system.employee_management_system.attendance.checkin_service import (
 		get_authenticated_employee,
 	)
@@ -2447,7 +2539,15 @@ def get_my_attendance_status():
 	Returns the real-time clocking status for the authenticated employee.
 	Includes whether currently clocked in, working duration, assigned office, and today's shift.
 	"""
-	_check_authenticated()
+	user = _check_authenticated()
+	if user == "Administrator" or _get_user_app_role(user) == "Administrator":
+		return {
+			"is_administrator": True,
+			"exempt": True,
+			"is_clocked_in": False,
+			"current_status": "Exempt",
+			"message": "Administrators do not clock in or clock out. Your role is to monitor attendance for HR and Employees.",
+		}
 	from employee_management_system.employee_management_system.attendance.checkin_service import (
 		get_employee_attendance_status,
 		get_authenticated_employee,
@@ -3203,6 +3303,26 @@ def mark_all_notifications_read():
 	user = _check_authenticated()
 	frappe.db.sql(
 		"""UPDATE `tabNotification Log` SET `read` = 1 WHERE `for_user` = %s AND `read` = 0""",
+		(user,)
+	)
+	frappe.db.commit()
+	return {"success": True}
+
+
+@frappe.whitelist()
+def clear_notifications(notification_name=None):
+	"""Clears notifications for current user. If notification_name is given, deletes that single notification, otherwise clears all."""
+	user = _check_authenticated()
+	if notification_name and notification_name != "all":
+		if frappe.db.exists("Notification Log", notification_name):
+			doc = frappe.get_doc("Notification Log", notification_name)
+			if doc.for_user == user or _get_user_app_role(user) in ("Administrator", "HR"):
+				frappe.delete_doc("Notification Log", notification_name, ignore_permissions=True)
+				frappe.db.commit()
+		return {"success": True}
+
+	frappe.db.sql(
+		"""DELETE FROM `tabNotification Log` WHERE `for_user` = %s""",
 		(user,)
 	)
 	frappe.db.commit()

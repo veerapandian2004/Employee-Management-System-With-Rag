@@ -11,6 +11,8 @@ import {
   CheckCheck,
   Check,
   Info,
+  Trash2,
+  X,
 } from "lucide-react";
 import { Input } from "../ui/input";
 import { Button } from "../ui/button";
@@ -19,6 +21,7 @@ import {
   apiFetchNotifications,
   apiMarkNotificationRead,
   apiMarkAllNotificationsRead,
+  apiClearNotifications,
 } from "../../services/apiService";
 
 export function Header({
@@ -96,6 +99,31 @@ export function Header({
       setUnreadCount(0);
     } catch (err) {
       console.error("Failed to mark all notifications read:", err);
+    }
+  };
+
+  const handleClearAllNotifications = async () => {
+    try {
+      await apiClearNotifications("all");
+      setNotifications([]);
+      setUnreadCount(0);
+    } catch (err) {
+      console.error("Failed to clear all notifications:", err);
+    }
+  };
+
+  const handleClearNotification = async (name) => {
+    try {
+      await apiClearNotifications(name);
+      setNotifications((prev) => {
+        const target = prev.find((n) => n.name === name);
+        if (target && !target.read) {
+          setUnreadCount((c) => Math.max(0, c - 1));
+        }
+        return prev.filter((n) => n.name !== name);
+      });
+    } catch (err) {
+      console.error("Failed to clear notification:", err);
     }
   };
 
@@ -238,16 +266,30 @@ export function Header({
                     </span>
                   )}
                 </div>
-                {unreadCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={handleMarkAllRead}
-                    className="flex items-center space-x-1 text-[11px] font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 cursor-pointer"
-                  >
-                    <CheckCheck className="h-3 w-3" />
-                    <span>Mark all read</span>
-                  </button>
-                )}
+                <div className="flex items-center space-x-2.5">
+                  {unreadCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleMarkAllRead}
+                      className="flex items-center space-x-1 text-[11px] font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 cursor-pointer"
+                      title="Mark all notifications as read"
+                    >
+                      <CheckCheck className="h-3 w-3" />
+                      <span>Mark read</span>
+                    </button>
+                  )}
+                  {notifications.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleClearAllNotifications}
+                      className="flex items-center space-x-1 text-[11px] font-medium text-rose-600 hover:text-rose-700 dark:text-rose-400 cursor-pointer"
+                      title="Clear all notifications"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      <span>Clear all</span>
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div className="max-h-80 overflow-y-auto space-y-1.5 pr-1 text-xs">
@@ -261,7 +303,7 @@ export function Header({
                     <div
                       key={n.name}
                       onClick={() => !n.read && handleMarkNotificationRead(n.name)}
-                      className={`group p-2.5 rounded-xl border transition-all cursor-pointer ${
+                      className={`group relative p-2.5 rounded-xl border transition-all cursor-pointer ${
                         !n.read
                           ? "bg-indigo-50/70 border-indigo-100 dark:bg-indigo-950/30 dark:border-indigo-900/50 theme-blue:bg-blue-950/40 theme-blue:border-blue-900/60"
                           : "bg-transparent border-transparent hover:bg-slate-50 dark:hover:bg-slate-800/50 theme-blue:hover:bg-[#18274d]"
@@ -271,9 +313,22 @@ export function Header({
                         <div className="font-semibold text-slate-800 dark:text-slate-200 theme-blue:text-blue-100 text-[12px] leading-tight">
                           {n.subject}
                         </div>
-                        {!n.read && (
-                          <span className="h-2 w-2 rounded-full bg-indigo-600 shrink-0 mt-1" />
-                        )}
+                        <div className="flex items-center space-x-1.5 shrink-0">
+                          {!n.read && (
+                            <span className="h-2 w-2 rounded-full bg-indigo-600 shrink-0 mt-0.5" />
+                          )}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleClearNotification(n.name);
+                            }}
+                            className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 p-0.5 rounded transition-opacity cursor-pointer"
+                            title="Dismiss notification"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       </div>
                       {n.email_content && (
                         <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-400 line-clamp-2 leading-relaxed">

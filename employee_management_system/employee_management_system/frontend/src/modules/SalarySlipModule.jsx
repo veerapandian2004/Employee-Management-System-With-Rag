@@ -225,7 +225,8 @@ export function SalarySlipModule({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className={`space-y-6 ${viewingSlip ? "print:hidden" : ""}`}>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100 flex items-center space-x-2">
             <Receipt className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
@@ -467,6 +468,7 @@ export function SalarySlipModule({
           </TableBody>
         </Table>
       </div>
+      </div>
 
       {/* Add / Edit Dialog Form */}
       {!isEmployee && (
@@ -707,94 +709,225 @@ export function SalarySlipModule({
       )}
 
       {/* Printable Paystub View Dialog */}
-      {viewingSlip && (
-        <Dialog
-          isOpen={Boolean(viewingSlip)}
-          onClose={() => setViewingSlip(null)}
-          title="Official Employee Salary Paystub"
-          maxWidth="max-w-xl"
-        >
-          <div className="space-y-6 py-2">
-            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
-              <div>
-                <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">EMP MANAGEMENT CORP</h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Paystub Period: {viewingSlip.salary_month}</p>
-              </div>
-              <Badge variant={viewingSlip.select === "Paid" ? "success" : "default"}>
-                {viewingSlip.select || "Draft"}
-              </Badge>
-            </div>
+      {viewingSlip && (() => {
+        const currentEmp = employees.find(
+          (e) => e.name === viewingSlip.employee || e.naming_series === viewingSlip.employee
+        );
+        const totalEarnings =
+          Number(viewingSlip.gross_pay) ||
+          Number(viewingSlip.basic_pay || 0) +
+            Number(viewingSlip.hra || 0) +
+            (viewingSlip.allowances || []).reduce((acc, a) => acc + Number(a.amount || 0), 0);
+        const totalDeductions =
+          (viewingSlip.total_deduction !== undefined && viewingSlip.total_deduction !== null && Number(viewingSlip.total_deduction) > 0)
+            ? Number(viewingSlip.total_deduction)
+            : Number(viewingSlip.leave_deduction || viewingSlip.lop_deduction || 0) +
+              (viewingSlip.deductions || []).reduce((acc, d) => acc + Number(d.amount || 0), 0);
 
-            <div className="grid grid-cols-2 gap-4 text-xs bg-slate-50 dark:bg-slate-800/60 p-4 rounded-lg border border-slate-100 dark:border-slate-800">
-              <div>
-                <span className="text-slate-400 dark:text-slate-400 block">Employee Name:</span>
-                <span className="font-bold text-slate-800 dark:text-slate-200 text-sm">{viewingSlip.employee_name}</span>
-              </div>
-              <div>
-                <span className="text-slate-400 dark:text-slate-400 block">Employee ID:</span>
-                <span className="font-mono font-semibold text-slate-800 dark:text-slate-200">{viewingSlip.employee}</span>
-              </div>
-            </div>
-
-            {/* Earnings & Deductions Dual Grid */}
-            <div className="grid grid-cols-2 gap-6 text-xs">
-              <div className="space-y-2">
-                <h4 className="font-bold text-slate-900 dark:text-slate-100 border-b border-slate-200 dark:border-slate-800 pb-1 uppercase tracking-wider text-[11px] text-emerald-600 dark:text-emerald-400">
-                  Earnings
-                </h4>
-                <div className="flex justify-between">
-                  <span className="text-slate-600 dark:text-slate-400">Basic Pay</span>
-                  <span className="font-semibold text-slate-900 dark:text-slate-100">${Number(viewingSlip.basic_pay || 0).toLocaleString()}</span>
+        return (
+          <Dialog
+            isOpen={Boolean(viewingSlip)}
+            onClose={() => setViewingSlip(null)}
+            maxWidth="max-w-2xl"
+          >
+            <div className="space-y-5 py-1 text-slate-900 dark:text-slate-100">
+              {/* Corporate Paystub Header */}
+              <div className="border-b-2 border-slate-800 dark:border-slate-600 pb-4">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h2 className="text-xl font-black tracking-tight uppercase text-slate-900 dark:text-white">
+                      EMP MANAGEMENT CORP
+                    </h2>
+                    <p className="text-xs font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-400 mt-0.5">
+                      Official Employee Salary Paystub
+                    </p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                      Confidential Earnings & Deductions Statement
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <Badge
+                      variant={viewingSlip.select === "Paid" ? "success" : "default"}
+                      className="text-xs font-bold px-3 py-0.5"
+                    >
+                      {viewingSlip.select || "Draft"}
+                    </Badge>
+                    <p className="text-xs font-mono font-semibold text-slate-700 dark:text-slate-300 mt-1.5">
+                      Ref: {viewingSlip.name}
+                    </p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Period: <span className="font-semibold text-slate-800 dark:text-slate-200">{viewingSlip.salary_month}</span>
+                    </p>
+                  </div>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600 dark:text-slate-400">HRA</span>
-                  <span className="font-semibold text-slate-900 dark:text-slate-100">${Number(viewingSlip.hra || 0).toLocaleString()}</span>
+              </div>
+
+              {/* Employee Information Card */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs">
+                <div>
+                  <span className="text-slate-500 dark:text-slate-400 block text-[11px] uppercase tracking-wider">Employee Name</span>
+                  <span className="font-bold text-slate-900 dark:text-slate-100 text-sm">
+                    {viewingSlip.employee_name || currentEmp?.full_name || "—"}
+                  </span>
                 </div>
-                {(viewingSlip.allowances || []).map((a, i) => (
-                  <div key={i} className="flex justify-between text-slate-600 dark:text-slate-400">
-                    <span>{a.allowance_name}</span>
-                    <span className="font-semibold text-slate-900 dark:text-slate-100">${Number(a.amount || 0).toLocaleString()}</span>
-                  </div>
-                ))}
+                <div>
+                  <span className="text-slate-500 dark:text-slate-400 block text-[11px] uppercase tracking-wider">Employee ID</span>
+                  <span className="font-mono font-bold text-slate-900 dark:text-slate-100">
+                    {viewingSlip.employee}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-500 dark:text-slate-400 block text-[11px] uppercase tracking-wider">Department</span>
+                  <span className="font-medium text-slate-800 dark:text-slate-200">
+                    {currentEmp?.department || "Operations"}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-500 dark:text-slate-400 block text-[11px] uppercase tracking-wider">Loss of Pay (LOP)</span>
+                  <span className="font-medium text-slate-800 dark:text-slate-200">
+                    {Number(viewingSlip.lop_days || 0) > 0
+                      ? `${viewingSlip.lop_days} Day(s) Unpaid`
+                      : "0 Days (Nil)"}
+                  </span>
+                </div>
               </div>
 
-              <div className="space-y-2">
-                <h4 className="font-bold text-slate-900 dark:text-slate-100 border-b border-slate-200 dark:border-slate-800 pb-1 uppercase tracking-wider text-[11px] text-rose-600 dark:text-rose-400">
-                  Deductions
-                </h4>
-                {Number(viewingSlip.leave_deduction) > 0 && (
-                  <div className="flex justify-between text-rose-700 dark:text-rose-400">
-                    <span>Leave Deduction</span>
-                    <span className="font-semibold">${Number(viewingSlip.leave_deduction).toLocaleString()}</span>
+              {/* Earnings & Deductions Tables */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                {/* Earnings Column */}
+                <div className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden bg-white dark:bg-slate-900">
+                  <div className="bg-emerald-50 dark:bg-emerald-950/50 px-3.5 py-2 border-b border-slate-200 dark:border-slate-700">
+                    <h4 className="font-bold text-emerald-800 dark:text-emerald-300 uppercase tracking-wider text-[11px]">
+                      Earnings Breakdown
+                    </h4>
                   </div>
-                )}
-                {(viewingSlip.deductions || []).map((d, i) => (
-                  <div key={i} className="flex justify-between text-slate-600 dark:text-slate-400">
-                    <span>{d.deduction_name}</span>
-                    <span className="font-semibold text-slate-900 dark:text-slate-100">${Number(d.amount || 0).toLocaleString()}</span>
+                  <div className="p-3.5 space-y-2">
+                    <div className="flex justify-between py-0.5">
+                      <span className="text-slate-600 dark:text-slate-400">Basic Salary</span>
+                      <span className="font-semibold text-slate-900 dark:text-slate-100 font-mono">
+                        ${Number(viewingSlip.basic_pay || 0).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="flex justify-between py-0.5">
+                      <span className="text-slate-600 dark:text-slate-400">House Rent Allowance (HRA)</span>
+                      <span className="font-semibold text-slate-900 dark:text-slate-100 font-mono">
+                        ${Number(viewingSlip.hra || 0).toLocaleString()}
+                      </span>
+                    </div>
+                    {(viewingSlip.allowances || []).map((a, i) => (
+                      <div key={i} className="flex justify-between py-0.5">
+                        <span className="text-slate-600 dark:text-slate-400">{a.allowance_name}</span>
+                        <span className="font-semibold text-slate-900 dark:text-slate-100 font-mono">
+                          ${Number(a.amount || 0).toLocaleString()}
+                        </span>
+                      </div>
+                    ))}
+                    <div className="pt-2.5 mt-2 border-t border-slate-200 dark:border-slate-700 flex justify-between font-bold text-slate-900 dark:text-slate-100">
+                      <span>Total Gross Earnings</span>
+                      <span className="text-emerald-700 dark:text-emerald-400 font-mono">
+                        ${totalEarnings.toLocaleString()}
+                      </span>
+                    </div>
                   </div>
-                ))}
+                </div>
+
+                {/* Deductions Column */}
+                <div className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden bg-white dark:bg-slate-900">
+                  <div className="bg-rose-50 dark:bg-rose-950/50 px-3.5 py-2 border-b border-slate-200 dark:border-slate-700">
+                    <h4 className="font-bold text-rose-800 dark:text-rose-300 uppercase tracking-wider text-[11px]">
+                      Deductions Breakdown
+                    </h4>
+                  </div>
+                  <div className="p-3.5 space-y-2">
+                    {Number(viewingSlip.leave_deduction || viewingSlip.lop_deduction) > 0 ? (
+                      <div className="flex justify-between py-0.5 text-rose-700 dark:text-rose-400">
+                        <span>Leave / LOP Deduction</span>
+                        <span className="font-semibold font-mono">
+                          -${Number(viewingSlip.leave_deduction || viewingSlip.lop_deduction).toLocaleString()}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex justify-between py-0.5 text-slate-500 dark:text-slate-400">
+                        <span>Leave / LOP Deduction</span>
+                        <span className="font-semibold font-mono">$0</span>
+                      </div>
+                    )}
+                    {(viewingSlip.deductions || []).map((d, i) => (
+                      <div key={i} className="flex justify-between py-0.5">
+                        <span className="text-slate-600 dark:text-slate-400">{d.deduction_name}</span>
+                        <span className="font-semibold text-slate-900 dark:text-slate-100 font-mono">
+                          -${Number(d.amount || 0).toLocaleString()}
+                        </span>
+                      </div>
+                    ))}
+                    <div className="pt-2.5 mt-2 border-t border-slate-200 dark:border-slate-700 flex justify-between font-bold text-slate-900 dark:text-slate-100">
+                      <span>Total Deductions</span>
+                      <span className="text-rose-700 dark:text-rose-400 font-mono">
+                        ${totalDeductions.toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Net Pay Box */}
+              <div className="bg-emerald-50 dark:bg-emerald-950/40 border-2 border-emerald-500/50 p-4 rounded-xl flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 block">
+                    TOTAL NET DISBURSEMENT
+                  </span>
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Gross Earnings (${totalEarnings.toLocaleString()}) − Deductions (${totalDeductions.toLocaleString()})
+                  </span>
+                </div>
+                <div className="text-right">
+                  <span className="text-2xl sm:text-3xl font-black text-emerald-700 dark:text-emerald-400 font-mono tracking-tight">
+                    ${Number(viewingSlip.net_pay || 0).toLocaleString()}
+                  </span>
+                </div>
+              </div>
+
+              {/* Signatures & Verification (Printed on Paper / PDF) */}
+              <div className="pt-6 border-t border-slate-200 dark:border-slate-700 grid grid-cols-2 gap-8 text-xs">
+                <div>
+                  <div className="h-10 border-b border-dashed border-slate-300 dark:border-slate-600 flex items-end pb-1 text-[11px] text-slate-400">
+                    Employee Signature
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-1">Received & Acknowledged</p>
+                </div>
+                <div>
+                  <div className="h-10 border-b border-dashed border-slate-300 dark:border-slate-600 flex items-end justify-end pb-1 text-[11px] text-slate-600 dark:text-slate-300 font-semibold">
+                    EMP Management Corp HR
+                  </div>
+                  <p className="text-[11px] text-slate-500 text-right mt-1">Authorized Signatory</p>
+                </div>
+              </div>
+
+              <p className="text-[10px] text-center text-slate-400 dark:text-slate-500 pt-1">
+                This is an official computer-generated salary paystub issued by EMP Management Corp. Questions? Contact hr@ems.com.
+              </p>
+
+              {/* Action Buttons (Hidden from Print) */}
+              <div className="pt-3 flex justify-end space-x-3 print:hidden border-t border-slate-100 dark:border-slate-800">
+                <Button
+                  variant="outline"
+                  onClick={() => window.print()}
+                  className="print:hidden font-semibold cursor-pointer"
+                >
+                  <Printer className="mr-2 h-4 w-4" /> Print Paystub
+                </Button>
+                <Button
+                  variant="default"
+                  onClick={() => setViewingSlip(null)}
+                  className="print:hidden cursor-pointer"
+                >
+                  Close
+                </Button>
               </div>
             </div>
-
-            <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-100 dark:border-emerald-900/40 p-4 rounded-xl">
-              <span className="font-bold text-slate-900 dark:text-slate-100 text-sm">TOTAL NET PAYABLE:</span>
-              <span className="text-2xl font-extrabold text-emerald-700 dark:text-emerald-400">
-                ${Number(viewingSlip.net_pay || 0).toLocaleString()}
-              </span>
-            </div>
-
-            <div className="pt-2 flex justify-end space-x-3 print:hidden">
-              <Button variant="outline" onClick={() => window.print()} className="print:hidden">
-                <Printer className="mr-2 h-4 w-4" /> Print Paystub
-              </Button>
-              <Button variant="default" onClick={() => setViewingSlip(null)} className="print:hidden">
-                Close
-              </Button>
-            </div>
-          </div>
-        </Dialog>
-      )}
+          </Dialog>
+        );
+      })()}
     </div>
   );
 }

@@ -46,6 +46,23 @@ export function DashboardModule({
   const pendingLeaves = leaveApplications.filter((l) => l.status === "Pending");
   const totalPayrollOutflow = salarySlips.reduce((acc, curr) => acc + Number(curr.net_pay || 0), 0);
 
+  const isSelfLeave = (leave) => {
+    if (!leave) return false;
+    const myEmpId = currentUser?.employee?.name || currentUser?.employee?.naming_series;
+    const myFullName = currentUser?.full_name;
+    const myEmail = currentUser?.email || currentUser?.employee?.email || currentUser?.user;
+    return Boolean(
+      (myEmpId && (leave.employee === myEmpId || leave.employee_name === myEmpId)) ||
+      (myFullName && leave.employee_name === myFullName) ||
+      (myEmail && (leave.employee === myEmail || leave.employee_email === myEmail))
+    );
+  };
+
+  // For HR, self-leaves require Administrator approval, so they are not actionable by this HR user
+  const actionablePendingLeaves = isAdmin
+    ? pendingLeaves
+    : pendingLeaves.filter((l) => !isSelfLeave(l));
+
   // Employee-specific stats
   const myEmployeeRecord = currentUser?.employee || null;
   const myLeaves = leaveApplications; // Already filtered for employee by backend
@@ -486,12 +503,14 @@ export function DashboardModule({
             >
               <Plus className="mr-2 h-4 w-4" /> Add Employee
             </Button>
-            <Button
-              onClick={handleOpenApplyLeave}
-              className="bg-indigo-700 hover:bg-indigo-800 text-white font-semibold shadow-md cursor-pointer"
-            >
-              <Plus className="mr-2 h-4 w-4" /> Apply for Leave
-            </Button>
+            {userRole !== "Administrator" && (
+              <Button
+                onClick={handleOpenApplyLeave}
+                className="bg-indigo-700 hover:bg-indigo-800 text-white font-semibold shadow-md cursor-pointer"
+              >
+                <Plus className="mr-2 h-4 w-4" /> Apply for Leave
+              </Button>
+            )}
             <Button
               onClick={() => setActiveTab("leave_application")}
               variant="outline"
@@ -591,8 +610,8 @@ export function DashboardModule({
               <div>
                 <CardTitle className="flex items-center space-x-2">
                   <span>Pending Leave Requests</span>
-                  {pendingLeaves.length > 0 && (
-                    <Badge variant="warning">{pendingLeaves.length} Action Needed</Badge>
+                  {actionablePendingLeaves.length > 0 && (
+                    <Badge variant="warning">{actionablePendingLeaves.length} Action Needed</Badge>
                   )}
                 </CardTitle>
                 <CardDescription>Leave applications requiring manager response</CardDescription>
@@ -630,24 +649,35 @@ export function DashboardModule({
                         </div>
                       </div>
 
-                      <div className="flex items-center space-x-2 shrink-0">
-                        <Button
-                          size="sm"
-                          variant="success"
-                          className="h-8 text-xs"
-                          onClick={() => onUpdateLeaveStatus && onUpdateLeaveStatus(leave.name, "Approved")}
-                        >
-                          <CheckCircle2 className="mr-1 h-3.5 w-3.5" /> Approve
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          className="h-8 text-xs"
-                          onClick={() => onUpdateLeaveStatus && onUpdateLeaveStatus(leave.name, "Rejected")}
-                        >
-                          <XCircle className="mr-1 h-3.5 w-3.5" /> Reject
-                        </Button>
-                      </div>
+                      {isSelfLeave(leave) && !isAdmin ? (
+                        <div className="flex items-center shrink-0">
+                          <Badge
+                            variant="outline"
+                            className="text-xs font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800"
+                          >
+                            Pending Admin Approval
+                          </Badge>
+                        </div>
+                      ) : (
+                        <div className="flex items-center space-x-2 shrink-0">
+                          <Button
+                            size="sm"
+                            variant="success"
+                            className="h-8 text-xs cursor-pointer"
+                            onClick={() => onUpdateLeaveStatus && onUpdateLeaveStatus(leave.name, "Approved")}
+                          >
+                            <CheckCircle2 className="mr-1 h-3.5 w-3.5" /> Approve
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            className="h-8 text-xs cursor-pointer"
+                            onClick={() => onUpdateLeaveStatus && onUpdateLeaveStatus(leave.name, "Rejected")}
+                          >
+                            <XCircle className="mr-1 h-3.5 w-3.5" /> Reject
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -960,15 +990,17 @@ export function DashboardModule({
       </Dialog>
 
       {/* Apply Leave Modal */}
-      <ApplyLeaveDialog
-        isOpen={isLeaveDialogOpen}
-        onClose={() => setIsLeaveDialogOpen(false)}
-        onAddLeaveApplication={onAddLeaveApplication}
-        leaveTypes={leaveTypes}
-        employees={employees}
-        userRole={userRole}
-        currentUser={currentUser}
-      />
+      {userRole !== "Administrator" && (
+        <ApplyLeaveDialog
+          isOpen={isLeaveDialogOpen}
+          onClose={() => setIsLeaveDialogOpen(false)}
+          onAddLeaveApplication={onAddLeaveApplication}
+          leaveTypes={leaveTypes}
+          employees={employees}
+          userRole={userRole}
+          currentUser={currentUser}
+        />
+      )}
     </div>
   );
 }

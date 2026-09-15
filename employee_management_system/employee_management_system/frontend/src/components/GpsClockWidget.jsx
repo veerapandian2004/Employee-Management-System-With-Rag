@@ -22,7 +22,7 @@ import {
   apiGetMyAttendanceStatus,
 } from "../services/apiService";
 
-export function GpsClockWidget({ onAttendanceUpdated }) {
+export function GpsClockWidget({ onAttendanceUpdated, refreshTrigger }) {
   const [statusData, setStatusData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -35,7 +35,22 @@ export function GpsClockWidget({ onAttendanceUpdated }) {
   const timerRef = useRef(null);
   const heartbeatRef = useRef(null);
 
-  // Load initial status
+  // Auto-dismiss feedback banners after 5 seconds
+  useEffect(() => {
+    if (successMessage) {
+      const timer = setTimeout(() => setSuccessMessage(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [successMessage]);
+
+  useEffect(() => {
+    if (errorMessage) {
+      const timer = setTimeout(() => setErrorMessage(null), 8000);
+      return () => clearTimeout(timer);
+    }
+  }, [errorMessage]);
+
+  // Load status
   const fetchStatus = async () => {
     try {
       setIsLoading(true);
@@ -46,6 +61,12 @@ export function GpsClockWidget({ onAttendanceUpdated }) {
       } else {
         setLiveDuration(0);
       }
+      // If employee is currently working, clear any outdated "Clocked OUT" message
+      if (data?.is_clocked_in) {
+        setSuccessMessage((prev) => (prev && prev.includes("OUT") ? null : prev));
+      } else {
+        setSuccessMessage((prev) => (prev && prev.includes("IN") ? null : prev));
+      }
     } catch (err) {
       console.warn("Failed to fetch attendance status:", err);
     } finally {
@@ -55,6 +76,15 @@ export function GpsClockWidget({ onAttendanceUpdated }) {
 
   useEffect(() => {
     fetchStatus();
+  }, [refreshTrigger]);
+
+  // Global event listener for instant synchronization with external actions
+  useEffect(() => {
+    const handleStatusSync = () => {
+      fetchStatus();
+    };
+    window.addEventListener("attendance-status-changed", handleStatusSync);
+    return () => window.removeEventListener("attendance-status-changed", handleStatusSync);
   }, []);
 
   // Real-time ticking stopwatch when "Working"
@@ -224,6 +254,10 @@ export function GpsClockWidget({ onAttendanceUpdated }) {
   const office = statusData?.office;
   const shift = statusData?.today_shift;
 
+  if (statusData?.exempt || statusData?.is_administrator) {
+    return null;
+  }
+
   return (
     <Card className="overflow-hidden border-2 border-indigo-100 dark:border-indigo-950/60 shadow-lg bg-gradient-to-br from-white via-slate-50/50 to-indigo-50/30 dark:from-slate-900 dark:via-slate-900 dark:to-indigo-950/20">
       {/* Top Status Strip */}
@@ -280,7 +314,7 @@ export function GpsClockWidget({ onAttendanceUpdated }) {
                     Not Clocked In
                   </Badge>
                 )}
-                {statusData?.auto_clocked_out && statusData?.clock_out_reason && (
+                {!isClockedIn && statusData?.auto_clocked_out && statusData?.clock_out_reason && (
                   <Badge variant="outline" className="border-amber-400 text-amber-800 dark:border-amber-600 dark:text-amber-300 font-semibold px-2 py-0.5 text-[11px] bg-amber-50 dark:bg-amber-950/40">
                     Auto: {statusData.clock_out_reason}
                   </Badge>
@@ -310,7 +344,7 @@ export function GpsClockWidget({ onAttendanceUpdated }) {
               <div className="bg-slate-100 dark:bg-slate-800/60 p-2.5 rounded-lg">
                 <span className="text-slate-500 dark:text-slate-400 block font-medium">Clock OUT</span>
                 <span className="font-semibold text-slate-800 dark:text-slate-200">
-                  {formatTimeDisplay(statusData?.clock_out_time)}
+                  {isClockedIn ? "—" : formatTimeDisplay(statusData?.clock_out_time)}
                 </span>
               </div>
             </div>
@@ -395,7 +429,7 @@ export function GpsClockWidget({ onAttendanceUpdated }) {
           </div>
         )}
 
-        {statusData?.auto_clocked_out && statusData?.clock_out_reason && (
+        {!isClockedIn && statusData?.auto_clocked_out && statusData?.clock_out_reason && (
           <div className="mt-4 p-3 rounded-xl bg-amber-50 border border-amber-200 dark:bg-amber-950/40 dark:border-amber-900 text-amber-800 dark:text-amber-300 text-xs flex items-center space-x-2 animate-in fade-in">
             <AlertCircle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
             <div>

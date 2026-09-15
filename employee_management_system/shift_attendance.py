@@ -214,10 +214,14 @@ def calculate_working_hours_from_checkins(
 	is_currently_clocked_in = current_in_time is not None
 	total_working_hours = round(total_seconds / 3600.0, 2)
 
+	# If employee is currently clocked in, their active session has NO clock-out yet.
+	# Do not return a previous session's OUT punch as the active session's last_out.
+	effective_last_out = None if is_currently_clocked_in else last_out
+
 	return {
 		"total_working_hours": total_working_hours,
 		"first_in": first_in,
-		"last_out": last_out,
+		"last_out": effective_last_out,
 		"has_valid_checkin": has_valid_checkin,
 		"is_currently_clocked_in": is_currently_clocked_in,
 		"intervals": intervals,
@@ -281,37 +285,103 @@ def check_approved_leave(
 	return False, None, None
 
 
+def is_company_holiday(target_date: Union[datetime.date, str]) -> Tuple[bool, Optional[str]]:
+	"""
+	Checks whether target_date exists in the Company Holiday Calendar (tabHoliday).
+	Returns: (is_holiday, holiday_name)
+	"""
+	d = getdate(target_date)
+	if not frappe.db.exists("DocType", "Holiday"):
+		return False, None
+	holidays = frappe.get_all(
+		"Holiday",
+		filters={"holiday_date": d},
+		fields=["name", "holiday_name"],
+		limit=1,
+	)
+	if holidays:
+		return True, holidays[0].holiday_name or holidays[0].name
+	return False, None
+
+
+def is_weekly_off_for_shift(
+	shift_type_or_doc: Any,
+	target_date: Union[datetime.date, str],
+) -> bool:
+	"""
+	Determines whether target_date is a configured weekly off for the employee's shift.
+	Defaults to Saturday, Sunday if not explicitly configured on the Shift Type.
+	"""
+	d = getdate(target_date)
+	day_name = d.strftime("%A")  # e.g., 'Saturday', 'Sunday'
+
+	if isinstance(shift_type_or_doc, str):
+		if not frappe.db.exists("Shift Type", shift_type_or_doc):
+			return day_name in ["Saturday", "Sunday"]
+		shift_doc = frappe.get_cached_doc("Shift Type", shift_type_or_doc)
+	else:
+		shift_doc = shift_type_or_doc
+
+	weekly_offs_str = shift_doc.get("weekly_off_days") if shift_doc else None
+	if not weekly_offs_str:
+		weekly_offs_str = "Saturday, Sunday"
+
+	off_days = [w.strip().lower() for w in weekly_offs_str.split(",") if w.strip()]
+	return day_name.lower() in off_days
+
+
+STATUS_PRIORITY = {
+	"Holiday": 70,
+	"Weekly Off": 60,
+	"On Leave": 50,
+	"Present": 40,
+	"Half Day": 20,
+	"Absent": 10,
+}
+
+
 def determine_attendance_status(
 	shift_type_doc: Any,
 	working_hours: float,
 	has_valid_checkin: bool,
-	is_on_leave: bool,
+	is_on_leave: bool = False,
+	is_holiday: bool = False,
+	is_weekly_off: bool = False,
 	is_currently_clocked_in: bool = False,
 ) -> str:
 	"""
-	Determines the Attendance status according to strict enterprise rules:
-	1. If Approved Leave exists: 'On Leave' (unless worked >= present threshold)
-	2. No valid check-in: 'Absent'
-	3. If employee is currently clocked in (working on active shift): 'Present'
-	4. Working hours below half-day threshold: 'Absent'
-	5. Working hours between half-day and full-day threshold: 'Half Day'
-	6. Working hours meeting full-day threshold: 'Present'
-	"""
-	half_day_thresh = flt(shift_type_doc.get("working_hours_threshold_for_half_day") or 4.0)
-	present_thresh = flt(shift_type_doc.get("working_hours_threshold_for_present") or 8.0)
-	absent_thresh = flt(shift_type_doc.get("working_hours_threshold_for_absent") or 1.0)
+	Determines the Attendance status according to strict enterprise priority rules:
+	Holiday > Weekly Off > Approved Leave > Present > Half Day > Absent
 
+	An employee must never be marked Absent if the date is an approved holiday,
+	weekly off, or approved leave.
+	"""
+	# Priority 1: Holiday
+	if is_holiday:
+		return "Holiday"
+
+	# Priority 2: Weekly Off
+	if is_weekly_off:
+		return "Weekly Off"
+
+	# Priority 3: Approved Leave
 	if is_on_leave:
+		present_thresh = flt(shift_type_doc.get("working_hours_threshold_for_present") or 8.0)
 		if working_hours >= present_thresh:
 			return "Present"
 		return "On Leave"
 
+	# Priority 4: No valid check-in on a normal working day -> Absent
 	if not has_valid_checkin:
 		return "Absent"
 
 	# If the employee is currently clocked in (working on active shift right now)
 	if is_currently_clocked_in:
 		return "Present"
+
+	# Working hours thresholds
+	half_day_thresh = flt(shift_type_doc.get("working_hours_threshold_for_half_day") or 4.0)
+	present_thresh = flt(shift_type_doc.get("working_hours_threshold_for_present") or 8.0)
 
 	if working_hours < half_day_thresh:
 		return "Absent"
@@ -338,12 +408,14 @@ def upsert_attendance_record(
 	auto_clocked_out: Optional[int] = None,
 	clock_out_reason: Optional[str] = None,
 	auto_clock_out_time: Optional[datetime.datetime] = None,
+	force_status: bool = False,
+	office_location: Optional[str] = None,
 ) -> Dict[str, Any]:
 	"""
 	Upserts an Attendance record into tabAttendance.
-	DUPLICATE PREVENTION:
+	DUPLICATE PREVENTION & STATUS PRIORITY GUARD:
 	1. Queries MariaDB for existing record for (employee, attendance_date).
-	2. If existing: updates record with recalculation results.
+	2. If existing: prevents lower-priority status from overwriting higher-priority status.
 	3. If non-existing: inserts a new Attendance document.
 	4. Updates linked Employee Checkin records with the Attendance ID.
 	"""
@@ -355,6 +427,18 @@ def upsert_attendance_record(
 	)
 
 	emp_name = frappe.db.get_value("Employee", employee, "full_name") or employee
+
+	# Enforce Status Priority:
+	# Holiday (70) > Weekly Off (60) > On Leave (50) > Present (40) > Half Day (20) > Absent (10)
+	if existing_name and not force_status:
+		existing_status = frappe.db.get_value("Attendance", existing_name, "status")
+		existing_prio = STATUS_PRIORITY.get(existing_status, 0)
+		new_prio = STATUS_PRIORITY.get(status, 0)
+		if existing_prio > new_prio:
+			status = existing_status
+			if existing_status == "On Leave" and not leave_application:
+				leave_application = frappe.db.get_value("Attendance", existing_name, "leave_application")
+				leave_type = frappe.db.get_value("Attendance", existing_name, "leave_type")
 
 	data = {
 		"employee": employee,
@@ -372,39 +456,69 @@ def upsert_attendance_record(
 		"remarks": remarks or f"Auto calculated via Shift Attendance on {now_datetime().strftime('%Y-%m-%d %H:%M:%S')}",
 	}
 
-	# Detect or assign auto clock out tracking
-	if auto_clocked_out is not None:
-		data["auto_clocked_out"] = cint(auto_clocked_out)
-	if clock_out_reason is not None:
-		data["clock_out_reason"] = clock_out_reason
-	if auto_clock_out_time is not None:
-		data["auto_clock_out_time"] = (
-			auto_clock_out_time.strftime("%Y-%m-%d %H:%M:%S")
-			if hasattr(auto_clock_out_time, "strftime")
-			else str(auto_clock_out_time)
-		)
-
-	# Auto-propagate from checkin logs if not explicitly passed
-	if auto_clocked_out is None and checkin_names:
+	# Persist office_location
+	if office_location:
+		data["office_location"] = office_location
+	elif checkin_names:
 		try:
-			auto_checkins = frappe.get_all(
+			first_chk = frappe.get_all(
 				"Employee Checkin",
-				filters={"name": ["in", checkin_names], "is_auto_clock_out": 1, "log_type": "OUT"},
-				fields=["name", "clock_out_reason", "time"],
-				order_by="time desc",
+				filters={"name": ["in", checkin_names]},
+				fields=["office_location"],
+				order_by="time asc",
 				limit=1,
 			)
-			if auto_checkins:
-				data["auto_clocked_out"] = 1
-				data["clock_out_reason"] = auto_checkins[0].get("clock_out_reason")
-				data["auto_clock_out_time"] = str(auto_checkins[0].get("time"))
+			if first_chk and first_chk[0].get("office_location"):
+				data["office_location"] = first_chk[0].get("office_location")
 		except Exception:
 			pass
+
+	if out_time is None:
+		data["out_time"] = None
+		data["auto_clocked_out"] = 0
+		data["clock_out_reason"] = None
+		data["auto_clock_out_time"] = None
+	else:
+		# Detect or assign auto clock out tracking
+		if auto_clocked_out is not None:
+			data["auto_clocked_out"] = cint(auto_clocked_out)
+		if clock_out_reason is not None:
+			data["clock_out_reason"] = clock_out_reason
+		if auto_clock_out_time is not None:
+			data["auto_clock_out_time"] = (
+				auto_clock_out_time.strftime("%Y-%m-%d %H:%M:%S")
+				if hasattr(auto_clock_out_time, "strftime")
+				else str(auto_clock_out_time)
+			)
+
+		# Auto-propagate from checkin logs if not explicitly passed
+		if auto_clocked_out is None and checkin_names:
+			try:
+				auto_checkins = frappe.get_all(
+					"Employee Checkin",
+					filters={"name": ["in", checkin_names], "is_auto_clock_out": 1, "log_type": "OUT"},
+					fields=["name", "clock_out_reason", "time"],
+					order_by="time desc",
+					limit=1,
+				)
+				if auto_checkins:
+					data["auto_clocked_out"] = 1
+					data["clock_out_reason"] = auto_checkins[0].get("clock_out_reason")
+					data["auto_clock_out_time"] = str(auto_checkins[0].get("time"))
+			except Exception:
+				pass
 
 	if existing_name:
 		doc = frappe.get_doc("Attendance", existing_name)
 		doc.update(data)
 		doc.save(ignore_permissions=True)
+		if data.get("out_time") is None:
+			frappe.db.set_value("Attendance", existing_name, {
+				"out_time": None,
+				"auto_clocked_out": 0,
+				"clock_out_reason": None,
+				"auto_clock_out_time": None,
+			}, update_modified=False)
 		action = "updated"
 	else:
 		doc = frappe.get_doc({"doctype": "Attendance", **data})
@@ -443,32 +557,42 @@ def process_attendance_for_employee_shift(
 	employee: str,
 	shift_type_name: str,
 	attendance_date: Union[datetime.date, str],
+	force_status: bool = False,
 ) -> Dict[str, Any]:
 	"""
 	Executes full calculation pipeline for a single employee shift on attendance_date:
-	1. Retrieve Shift Type
-	2. Compute normal or overnight window
-	3. Fetch checkins
-	4. Calculate working hours & pairs
+	1. Check Holiday in Holiday Calendar
+	2. Check Weekly Off for Shift
+	3. Check Approved Leave
+	4. Fetch checkins & calculate working hours & pairs
 	5. Check grace periods (late / early)
-	6. Check approved leave
-	7. Determine status
-	8. Upsert tabAttendance
+	6. Determine status with strict priority:
+	   Holiday > Weekly Off > Approved Leave > Present > Late Entry > Half Day > Absent
+	7. Upsert tabAttendance idempotently
 	"""
 	if not frappe.db.exists("Shift Type", shift_type_name):
 		raise frappe.ValidationError(_("Shift Type '{0}' does not exist").format(shift_type_name))
 
 	shift_doc = frappe.get_doc("Shift Type", shift_type_name)
 
-	# 1. Compute shift time window (handles normal & overnight)
+	# 1. Check Holiday Calendar
+	is_holiday, holiday_name = is_company_holiday(attendance_date)
+
+	# 2. Check Weekly Off
+	is_weekly_off = is_weekly_off_for_shift(shift_doc, attendance_date)
+
+	# 3. Check Approved Leave
+	is_on_leave, leave_app, leave_type = check_approved_leave(employee, attendance_date)
+
+	# 4. Compute shift time window (handles normal & overnight)
 	shift_start, shift_end, window_start, window_end, is_overnight = get_shift_window(
 		shift_doc, attendance_date
 	)
 
-	# 2. Fetch check-in logs in window
+	# 5. Fetch check-in logs in window
 	logs = get_checkin_logs_for_window(employee, window_start, window_end)
 
-	# 3. Calculate working hours from pairs
+	# 6. Calculate working hours from pairs
 	calc_res = calculate_working_hours_from_checkins(logs)
 	total_working_hours = calc_res["total_working_hours"]
 	first_in = calc_res["first_in"]
@@ -476,41 +600,54 @@ def process_attendance_for_employee_shift(
 	has_valid_checkin = calc_res["has_valid_checkin"]
 	log_names = calc_res["log_names"]
 
-	# 4. Evaluate grace periods
+	# 7. Evaluate grace periods
 	late_entry, early_exit = evaluate_grace_periods(
 		shift_doc, shift_start, shift_end, first_in, last_out
 	)
 
-	# 5. Check approved leave
-	is_on_leave, leave_app, leave_type = check_approved_leave(employee, attendance_date)
-
-	# 6. Determine status
+	# 8. Determine status adhering strictly to priority:
+	# Holiday > Weekly Off > Approved Leave > Present > Half Day > Absent
 	status = determine_attendance_status(
-		shift_doc,
-		total_working_hours,
-		has_valid_checkin,
-		is_on_leave,
+		shift_type_doc=shift_doc,
+		working_hours=total_working_hours,
+		has_valid_checkin=has_valid_checkin,
+		is_on_leave=is_on_leave,
+		is_holiday=is_holiday,
+		is_weekly_off=is_weekly_off,
 		is_currently_clocked_in=calc_res.get("is_currently_clocked_in", False),
 	)
 
-	remarks = f"Shift: {shift_type_name} ({shift_doc.start_time} - {shift_doc.end_time})"
-	if is_overnight:
-		remarks += " [Overnight]"
-	if late_entry:
-		remarks += " | Late Entry"
-	if early_exit:
-		remarks += " | Early Exit"
-	if is_on_leave:
-		remarks += f" | Approved Leave ({leave_type})"
+	# Build remarks
+	if is_holiday:
+		remarks = f"Company Holiday: {holiday_name or 'Holiday'}"
+		if has_valid_checkin:
+			remarks += f" (Punches recorded: {total_working_hours} hrs)"
+	elif is_weekly_off:
+		remarks = f"Weekly Off: {getdate(attendance_date).strftime('%A')}"
+		if has_valid_checkin:
+			remarks += f" (Punches recorded: {total_working_hours} hrs)"
+	elif is_on_leave:
+		remarks = f"Shift: {shift_type_name} | Approved Leave ({leave_type})"
+	else:
+		remarks = f"Shift: {shift_type_name} ({shift_doc.start_time} - {shift_doc.end_time})"
+		if is_overnight:
+			remarks += " [Overnight]"
+		if late_entry:
+			remarks += " | Late Entry"
+		if early_exit:
+			remarks += " | Early Exit"
 
-	# 7. Upsert to Attendance (Duplicate prevention)
+	# 9. Upsert to Attendance (Duplicate prevention & priority guard)
+	is_clocked_in_now = calc_res.get("is_currently_clocked_in", False)
+	effective_out = None if is_clocked_in_now else last_out
+
 	upsert_res = upsert_attendance_record(
 		employee=employee,
 		attendance_date=attendance_date,
 		status=status,
 		shift=shift_type_name,
 		in_time=first_in,
-		out_time=last_out,
+		out_time=effective_out,
 		working_hours=total_working_hours,
 		late_entry=late_entry,
 		early_exit=early_exit,
@@ -518,6 +655,8 @@ def process_attendance_for_employee_shift(
 		leave_type=leave_type,
 		remarks=remarks,
 		checkin_names=log_names,
+		auto_clocked_out=0 if is_clocked_in_now else None,
+		force_status=force_status,
 	)
 
 	return upsert_res

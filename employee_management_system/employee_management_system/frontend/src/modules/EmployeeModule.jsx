@@ -946,15 +946,7 @@ export function EmployeeModule({
             >
               <Grid className="h-4 w-4" />
             </button>
-            <button
-              onClick={() => setViewMode("table")}
-              className={`p-1.5 rounded-md transition-colors cursor-pointer ${
-                viewMode === "table" ? "bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs" : "text-slate-500 hover:text-slate-900 dark:text-slate-400"
-              }`}
-              title="Table View"
-            >
-              <List className="h-4 w-4" />
-            </button>
+            
           </div>
         </div>
       </Card>

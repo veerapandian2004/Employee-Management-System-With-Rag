@@ -205,7 +205,7 @@ export function LoginModule({ onLoginSuccess }) {
                 <span className="text-slate-400">Frappe Core Admin:</span>
                 <button
                   type="button"
-                  onClick={() => handleQuickLogin("Administrator", "admin")}
+                  onClick={() => handleQuickLogin("admin@example.com", "Tech@123")}
                   className="text-indigo-400 hover:text-indigo-300 font-mono font-medium hover:underline cursor-pointer"
                 >
                   Administrator / admin

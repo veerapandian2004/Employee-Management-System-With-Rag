@@ -48,16 +48,12 @@ def get_authenticated_employee(user=None):
 			as_dict=True,
 		)
 
-	# Special support for System Administrator if no linked employee exists
-	if not emp and user == "Administrator":
-		first_admin_emp = frappe.db.get_value(
-			"Employee",
-			{"status": "Active"},
-			["name", "full_name", "status", "office_location", "email"],
-			as_dict=True,
+	# Administrators are exempt from attendance clock-in / clock-out tracking
+	if user == "Administrator":
+		frappe.throw(
+			_("Administrators do not clock in or clock out. Your role is to monitor attendance for HR and Employees."),
+			frappe.PermissionError,
 		)
-		if first_admin_emp:
-			emp = first_admin_emp
 
 	if not emp:
 		frappe.throw(
@@ -122,7 +118,12 @@ def get_latest_checkin(employee_id):
 			"time",
 			"log_type",
 			"shift",
+			"shift_start",
+			"shift_end",
 			"attendance_source",
+			"latitude",
+			"longitude",
+			"accuracy",
 			"distance_from_office",
 			"office_location",
 			"is_auto_clock_out",
@@ -185,8 +186,36 @@ def record_gps_checkin(log_type, latitude, longitude, accuracy, user=None):
 	# Validate coordinates
 	lat, lon = validate_coordinates(latitude, longitude)
 
-	# Get assigned office
-	office = get_assigned_office(emp)
+	# Resolve office: check assigned office, or match any active authorized office where employee is within radius
+	from employee_management_system.employee_management_system.attendance.gps_validation import (
+		haversine_distance,
+	)
+
+	office = None
+	try:
+		assigned_office = get_assigned_office(emp)
+		dist = haversine_distance(lat, lon, assigned_office.latitude, assigned_office.longitude)
+		rad = flt(assigned_office.allowed_radius) if assigned_office.allowed_radius else 150.0
+		if dist <= rad:
+			office = assigned_office
+	except Exception:
+		pass
+
+	if not office:
+		active_offices = frappe.get_all(
+			"Office Location",
+			filters={"is_active": 1},
+			fields=["name", "office_name", "latitude", "longitude", "allowed_radius", "max_accuracy"],
+		)
+		for off_row in active_offices:
+			d = haversine_distance(lat, lon, off_row.latitude, off_row.longitude)
+			r = flt(off_row.allowed_radius) if off_row.allowed_radius else 150.0
+			if d <= r:
+				office = frappe.get_doc("Office Location", off_row.name)
+				break
+
+	if not office:
+		office = get_assigned_office(emp)
 
 	# Validate GPS accuracy against office policy
 	acc = validate_gps_accuracy(accuracy, max_accuracy=office.max_accuracy)
@@ -279,6 +308,18 @@ def get_employee_attendance_status(employee_id=None, user=None):
 	- Today's shift information
 	- Assigned office details
 	"""
+	if not user:
+		user = frappe.session.user
+
+	if user == "Administrator" and not employee_id:
+		return {
+			"is_administrator": True,
+			"exempt": True,
+			"is_clocked_in": False,
+			"current_status": "Exempt",
+			"message": "Administrators do not clock in or clock out. Your role is to monitor attendance for HR and Employees.",
+		}
+
 	if not employee_id:
 		emp = get_authenticated_employee(user=user)
 		emp_id = emp.name
@@ -360,38 +401,62 @@ def get_employee_attendance_status(employee_id=None, user=None):
 	clock_out_time = None
 	working_seconds = 0
 
-	# Find first clock in today and last clock out today
-	for chk in checkins_today:
-		if chk.log_type == "IN" and not clock_in_time:
-			clock_in_time = str(chk.time)
-		if chk.log_type == "OUT":
-			clock_out_time = str(chk.time)
-
-	# Re-check latest if auto clocked out
-	if not is_clocked_in and latest and latest.get("log_type") == "OUT":
-		clock_out_time = str(latest.get("time"))
-
-	if is_clocked_in:
-		current_status = "Working"
-		# Calculate seconds since last IN
-		in_dt = get_datetime(latest.get("time"))
-		working_seconds = max(0, int(time_diff_in_seconds(now_datetime(), in_dt)))
-	elif clock_out_time:
-		current_status = "Clocked Out"
-	else:
-		current_status = "Not Clocked In"
-
 	# Get attendance record for today if exists
 	today_att = frappe.db.get_value(
 		"Attendance",
 		{"employee": emp_id, "attendance_date": today_date},
-		["name", "status", "working_hours", "late_entry", "early_exit", "auto_clocked_out", "clock_out_reason", "auto_clock_out_time", "remarks"],
+		["name", "status", "working_hours", "late_entry", "early_exit", "auto_clocked_out", "clock_out_reason", "auto_clock_out_time", "office_location", "remarks"],
 		as_dict=True,
 	)
 
-	auto_clocked_out = bool(today_att.get("auto_clocked_out")) if today_att else bool(latest and latest.get("is_auto_clock_out"))
-	clock_out_reason = (today_att.get("clock_out_reason") if today_att else None) or (latest.get("clock_out_reason") if latest else None)
-	auto_clock_out_time = (str(today_att.get("auto_clock_out_time")) if today_att and today_att.get("auto_clock_out_time") else None) or (str(latest.get("time")) if latest and latest.get("is_auto_clock_out") else None)
+	if is_clocked_in:
+		current_status = "Working"
+		clock_in_time = str(latest.get("time"))
+		# While working, the active session has not clocked out.
+		# Never carry over a previous session's clock-out time or auto clock-out state.
+		clock_out_time = None
+		auto_clocked_out = False
+		clock_out_reason = None
+		auto_clock_out_time = None
+		if today_att:
+			today_att["out_time"] = None
+			today_att["auto_clocked_out"] = 0
+			today_att["clock_out_reason"] = None
+			today_att["auto_clock_out_time"] = None
+			today_att["early_exit"] = 0
+
+		# Calculate seconds since active IN
+		in_dt = get_datetime(latest.get("time"))
+		working_seconds = max(0, int(time_diff_in_seconds(now_datetime(), in_dt)))
+	else:
+		# Employee is NOT currently clocked in
+		# Find the most recent OUT punch today or from latest checkin
+		if latest and latest.get("log_type") == "OUT":
+			clock_out_time = str(latest.get("time"))
+		elif checkins_today:
+			for chk in reversed(checkins_today):
+				if chk.log_type == "OUT":
+					clock_out_time = str(chk.time)
+					break
+
+		if clock_out_time:
+			current_status = "Clocked Out"
+		else:
+			current_status = "Not Clocked In"
+
+		# Find clock in for today's session
+		for chk in checkins_today:
+			if chk.log_type == "IN":
+				clock_in_time = str(chk.time)
+				break
+		if not clock_in_time and latest and latest.get("log_type") == "IN":
+			clock_in_time = str(latest.get("time"))
+
+		# Only mark auto_clocked_out if the session ended via auto clock-out
+		is_latest_auto_out = bool(latest and latest.get("log_type") == "OUT" and latest.get("is_auto_clock_out"))
+		auto_clocked_out = is_latest_auto_out or bool(today_att and today_att.get("auto_clocked_out") and today_att.get("out_time"))
+		clock_out_reason = (latest.get("clock_out_reason") if is_latest_auto_out else None) or (today_att.get("clock_out_reason") if auto_clocked_out and today_att else None)
+		auto_clock_out_time = (str(latest.get("time")) if is_latest_auto_out else None) or (str(today_att.get("auto_clock_out_time")) if auto_clocked_out and today_att and today_att.get("auto_clock_out_time") else None)
 
 	return {
 		"employee": emp_id,

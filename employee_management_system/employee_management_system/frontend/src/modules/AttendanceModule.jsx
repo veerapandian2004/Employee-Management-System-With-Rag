@@ -31,6 +31,8 @@ import {
   apiEmployeeCheckin,
   apiEmployeeCheckout,
   apiFetchShiftTypes,
+  apiClockIn,
+  apiClockOut,
 } from "../services/apiService";
 import { GpsClockWidget } from "../components/GpsClockWidget";
 
@@ -52,6 +54,7 @@ export function AttendanceModule({
   const [search, setSearch] = useState("");
   const [shiftTypes, setShiftTypes] = useState([]);
   const [isRecalculating, setIsRecalculating] = useState(false);
+  const [widgetRefreshKey, setWidgetRefreshKey] = useState(0);
   const [actionMessage, setActionMessage] = useState(null);
 
   useEffect(() => {
@@ -133,6 +136,8 @@ export function AttendanceModule({
         res?.message || "Shift attendance recalculation completed successfully!",
         "success"
       );
+      setWidgetRefreshKey((k) => k + 1);
+      window.dispatchEvent(new CustomEvent("attendance-status-changed"));
       if (onRefreshData) {
         await onRefreshData();
       }
@@ -145,9 +150,28 @@ export function AttendanceModule({
 
   const handleClockIn = async () => {
     try {
-      const res = await apiEmployeeCheckin();
+      let res;
+      try {
+        const coords = await new Promise((resolve, reject) => {
+          if (!navigator.geolocation) return reject(new Error("No geolocation"));
+          navigator.geolocation.getCurrentPosition(
+            (pos) => resolve(pos.coords),
+            (err) => reject(err),
+            { enableHighAccuracy: true, timeout: 5000, maximumAge: 10000 }
+          );
+        });
+        res = await apiClockIn({
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          accuracy: coords.accuracy,
+        });
+      } catch {
+        res = await apiEmployeeCheckin();
+      }
       const tStr = res?.time ? new Date(res.time).toLocaleTimeString() : "now";
       showNotification(`Clocked IN successfully at ${tStr}!`, "success");
+      setWidgetRefreshKey((k) => k + 1);
+      window.dispatchEvent(new CustomEvent("attendance-status-changed"));
       if (onRefreshData) {
         await onRefreshData();
       }
@@ -158,9 +182,28 @@ export function AttendanceModule({
 
   const handleClockOut = async () => {
     try {
-      const res = await apiEmployeeCheckout();
+      let res;
+      try {
+        const coords = await new Promise((resolve, reject) => {
+          if (!navigator.geolocation) return reject(new Error("No geolocation"));
+          navigator.geolocation.getCurrentPosition(
+            (pos) => resolve(pos.coords),
+            (err) => reject(err),
+            { enableHighAccuracy: true, timeout: 5000, maximumAge: 10000 }
+          );
+        });
+        res = await apiClockOut({
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          accuracy: coords.accuracy,
+        });
+      } catch {
+        res = await apiEmployeeCheckout();
+      }
       const tStr = res?.time ? new Date(res.time).toLocaleTimeString() : "now";
       showNotification(`Clocked OUT successfully at ${tStr}!`, "success");
+      setWidgetRefreshKey((k) => k + 1);
+      window.dispatchEvent(new CustomEvent("attendance-status-changed"));
       if (onRefreshData) {
         await onRefreshData();
       }
@@ -205,21 +248,25 @@ export function AttendanceModule({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* Quick Clock IN / OUT */}
-          <Button
-            onClick={handleClockIn}
-            variant="outline"
-            className="border-emerald-600 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-500 dark:text-emerald-400 font-medium shadow-sm text-xs h-9"
-          >
-            <LogIn className="mr-1.5 h-3.5 w-3.5 text-emerald-600" /> Clock IN
-          </Button>
-          <Button
-            onClick={handleClockOut}
-            variant="outline"
-            className="border-amber-600 text-amber-700 hover:bg-amber-50 dark:border-amber-500 dark:text-amber-400 font-medium shadow-sm text-xs h-9"
-          >
-            <LogOut className="mr-1.5 h-3.5 w-3.5 text-amber-600" /> Clock OUT
-          </Button>
+          {/* Quick Clock IN / OUT (Employees & HR only) */}
+          {userRole !== "Administrator" && (
+            <>
+              <Button
+                onClick={handleClockIn}
+                variant="outline"
+                className="border-emerald-600 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-500 dark:text-emerald-400 font-medium shadow-sm text-xs h-9 cursor-pointer"
+              >
+                <LogIn className="mr-1.5 h-3.5 w-3.5 text-emerald-600" /> Clock IN
+              </Button>
+              <Button
+                onClick={handleClockOut}
+                variant="outline"
+                className="border-amber-600 text-amber-700 hover:bg-amber-50 dark:border-amber-500 dark:text-amber-400 font-medium shadow-sm text-xs h-9 cursor-pointer"
+              >
+                <LogOut className="mr-1.5 h-3.5 w-3.5 text-amber-600" /> Clock OUT
+              </Button>
+            </>
+          )}
 
           {/* Admin Recalculate */}
           {isAdminOrHR && (
@@ -267,8 +314,13 @@ export function AttendanceModule({
         </div>
       )}
 
-      {/* GPS Clock IN / OUT Attendance Widget */}
-      <GpsClockWidget onAttendanceUpdated={onRefreshData} />
+      {/* GPS Clock IN / OUT Attendance Widget (Employees & HR only) */}
+      {userRole !== "Administrator" && (
+        <GpsClockWidget
+          onAttendanceUpdated={onRefreshData}
+          refreshTrigger={widgetRefreshKey}
+        />
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
@@ -390,6 +442,7 @@ export function AttendanceModule({
               <TableHead>Employee</TableHead>
               <TableHead>Date</TableHead>
               <TableHead>Shift</TableHead>
+              <TableHead>Office</TableHead>
               <TableHead>Check-In</TableHead>
               <TableHead>Check-Out</TableHead>
               <TableHead>Hours</TableHead>
@@ -402,7 +455,7 @@ export function AttendanceModule({
             {filteredAttendance.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={isAdminOrHR ? 9 : 8}
+                  colSpan={isAdminOrHR ? 10 : 9}
                   className="text-center py-8 text-slate-400 text-sm"
                 >
                   No attendance records found matching filters.
@@ -438,6 +491,15 @@ export function AttendanceModule({
                         {att.shift || "Standard"}
                       </Badge>
                     </TableCell>
+                    <TableCell className="text-xs text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                      {att.office_location ? (
+                        <span className="inline-flex items-center font-medium text-slate-700 dark:text-slate-300">
+                          {att.office_location}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
+                    </TableCell>
                     <TableCell className="font-mono text-xs text-slate-600 dark:text-slate-400 whitespace-nowrap">
                       {att.check_in || "-"}
                     </TableCell>
@@ -464,6 +526,14 @@ export function AttendanceModule({
                         >
                           {att.status}
                         </Badge>
+                        {Boolean(att.auto_clocked_out) && (
+                          <span
+                            className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-indigo-100 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-900"
+                            title={`Auto Clock-Out: ${att.clock_out_reason || "Scheduled Shift End"}`}
+                          >
+                            Auto Clock-Out
+                          </span>
+                        )}
                         {isLate && (
                           <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-900">
                             Late Entry
@@ -483,7 +553,7 @@ export function AttendanceModule({
                             }`}
                             title={`Automatic Clock-Out: ${att.clock_out_reason}`}
                           >
-                            Auto: {att.clock_out_reason}
+                            {att.clock_out_reason}
                           </span>
                         )}
                       </div>

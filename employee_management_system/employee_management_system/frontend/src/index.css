@@ -115,6 +115,11 @@ html.dark ::-webkit-scrollbar-thumb:hover {
 
 /* Print optimization */
 @media print {
+  @page {
+    size: A4 portrait;
+    margin: 10mm 15mm;
+  }
+
   /* Hide all buttons, navigation, headers, and explicit no-print elements */
   .print\:hidden,
   .no-print,
@@ -136,12 +141,22 @@ html.dark ::-webkit-scrollbar-thumb:hover {
     height: auto !important;
     min-height: auto !important;
     overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
   #root {
     min-height: auto !important;
     height: auto !important;
     overflow: visible !important;
+    background: transparent !important;
+  }
+
+  main {
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    background: transparent !important;
   }
 
   /* When printing from a modal dialog, flatten and center clean document */
@@ -163,8 +178,8 @@ html.dark ::-webkit-scrollbar-thumb:hover {
     max-width: 100% !important;
     width: 100% !important;
     box-shadow: none !important;
-    border: 1px solid #e2e8f0 !important;
-    border-radius: 8px !important;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 12px !important;
     padding: 1.5rem !important;
     margin: 0 auto !important;
     max-height: none !important;
@@ -173,10 +188,31 @@ html.dark ::-webkit-scrollbar-thumb:hover {
     color: #0f172a !important;
   }
 
-  /* Ensure text and badges print legibly */
+  /* Ensure text and badges print legibly in sharp dark ink */
   .text-white,
   .dark .text-slate-100,
-  .dark .text-slate-200 {
+  .dark .text-slate-200,
+  .dark .text-slate-300 {
     color: #0f172a !important;
+  }
+
+  .dark .text-slate-400,
+  .dark .text-slate-500 {
+    color: #475569 !important;
+  }
+
+  .dark .bg-slate-800,
+  .dark .bg-slate-900 {
+    background-color: #f8fafc !important;
+    border-color: #e2e8f0 !important;
+  }
+
+  /* Force background colors on print for badges & paystub boxes */
+  .bg-slate-50,
+  .bg-emerald-50,
+  .bg-rose-50,
+  .bg-indigo-50 {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 }
