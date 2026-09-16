@@ -12,6 +12,7 @@ frontend/src/
 │   ├── layout/
 │   │   ├── Header.jsx             # Top bar with title, search, live sync indicator, theme picker & logout
 │   │   └── Sidebar.jsx            # Role-filtered collapsible navigation, counts badges & user profile badge
+│   ├── GpsClockWidget.jsx         # Secure GPS clock IN/OUT, live stopwatch, shift display & auto clock-out notifications
 │   └── ui/
 │       ├── utils.js               # Common Tailwind merge utility (cn)
 │       ├── badge.jsx              # Status badge primitive (success, warning, destructive, outline)

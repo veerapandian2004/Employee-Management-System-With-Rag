@@ -211,6 +211,7 @@ bench --site hospital.localhost enable-scheduler
 ```
 
 ### Step 7.2: Scheduled Tasks in `hooks.py`
+- **Periodic (`all`) & Hourly**: `process_shift_completion_job` (evaluates active check-in sessions against scheduled shift end times and automatically clocks out completed sessions at exact shift end timestamps with reason `'Shift Completed'`)
 - **Hourly**: `process_auto_attendance_job` (evaluates shift assignments for yesterday and today, reconciling overnight night shifts and enforcing strict status priorities)
 - **Daily**: `process_auto_attendance_daily` (performs 3-day retroactive reconciliation)
 
@@ -260,7 +261,7 @@ Every core subsystem has an automated test suite. Run all 164 tests from your `f
 ```bash
 cd /home/tui013/frappe-benchv/sites
 
-# 1. Automatic Clock-Out System Suite (10 Tests)
+# 1. Automatic Clock-Out System Suite (14 Tests)
 ../env/bin/python ../apps/employee_management_system/employee_management_system/test_auto_clock_out.py
 
 # 2. GPS Attendance Security & Validation Suite (19 Tests)
@@ -294,7 +295,7 @@ cd /home/tui013/frappe-benchv/sites
 ../env/bin/python ../apps/employee_management_system/employee_management_system/test_qdrant_knowledge.py
 ```
 
-*Expected output: All 11 test suites report `OK` with zero failures (164/164 passing).*
+*Expected output: All 11 test suites report `OK` with zero failures (168/168 passing).*
 
 ---
 
@@ -325,3 +326,6 @@ sudo systemctl reload nginx
 
 ### Q3: Batch Payroll skips slips
 **Resolution**: Batch payroll is strictly idempotent. If a salary slip already exists for that employee and month, it is safely skipped unless the `Regenerate Existing Slips` checkbox is selected.
+
+### Q4: Automatic clock-out not triggering when scheduled shift ends
+**Resolution**: Ensure Frappe Scheduler is enabled on the site (`bench --site hospital.localhost enable-scheduler`). The system now includes multi-level fallback shift resolution (`Day Shift` 09:00 - 17:00) so unassigned staff are never stranded in "Working" state, and page refresh/pulse calls evaluate shift completion in real-time.

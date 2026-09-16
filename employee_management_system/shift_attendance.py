@@ -89,6 +89,89 @@ def get_active_shift_assignments(
 	return valid_assignments
 
 
+def resolve_employee_shift_type(
+	employee_id: str,
+	for_date: Optional[Union[datetime.date, str]] = None,
+	auto_assign: bool = True,
+) -> Optional[str]:
+	"""
+	Resolves the shift type for an employee on a given date with robust multi-level fallbacks:
+	1. Direct active Shift Assignment covering for_date.
+	2. Most recent active Shift Assignment for this employee.
+	3. Shift logged on the employee's check-in punch.
+	4. Company standard default shift ('Day Shift', 'Standard Day Shift', or first active Shift Type).
+	5. If auto_assign=True and no Shift Assignment existed, dynamically creates an active
+	   Shift Assignment to guarantee database referential integrity.
+	"""
+	if not employee_id:
+		return None
+
+	target_d = getdate(for_date) if for_date else getdate(nowdate())
+
+	# 1. Direct active Shift Assignment covering target_d
+	active = get_active_shift_assignments(target_d, employee=employee_id)
+	if active:
+		return active[0]["shift_type"]
+
+	# 2. Most recent active Shift Assignment for this employee
+	any_active = frappe.get_all(
+		"Shift Assignment",
+		filters={"employee": employee_id, "status": "Active"},
+		fields=["shift_type"],
+		order_by="start_date desc",
+		limit=1,
+	)
+	if any_active and frappe.db.exists("Shift Type", any_active[0]["shift_type"]):
+		return any_active[0]["shift_type"]
+
+	# 3. Check latest checkin for this employee
+	latest_chk = frappe.get_all(
+		"Employee Checkin",
+		filters={"employee": employee_id},
+		fields=["shift"],
+		order_by="time desc",
+		limit=1,
+	)
+	if latest_chk and latest_chk[0].get("shift") and frappe.db.exists("Shift Type", latest_chk[0]["shift"]):
+		return latest_chk[0]["shift"]
+
+	# 4. Standard default Shift Type
+	default_shift = None
+	if frappe.db.exists("Shift Type", "Day Shift"):
+		default_shift = "Day Shift"
+	elif frappe.db.exists("Shift Type", "Standard Day Shift"):
+		default_shift = "Standard Day Shift"
+	else:
+		active_types = frappe.get_all(
+			"Shift Type",
+			filters={"is_active": 1},
+			fields=["name"],
+			order_by="creation asc",
+			limit=1,
+		)
+		if active_types:
+			default_shift = active_types[0].name
+
+	# 5. Optionally create persistent Shift Assignment if none exists
+	if default_shift and auto_assign and frappe.db.exists("DocType", "Shift Assignment"):
+		try:
+			existing_sa = frappe.db.exists("Shift Assignment", {"employee": employee_id, "status": "Active"})
+			if not existing_sa:
+				sa_doc = frappe.get_doc({
+					"doctype": "Shift Assignment",
+					"employee": employee_id,
+					"shift_type": default_shift,
+					"start_date": "2026-01-01",
+					"status": "Active",
+				})
+				sa_doc.insert(ignore_permissions=True)
+				frappe.db.commit()
+		except Exception as e:
+			frappe.logger().warning(f"Could not auto-create Shift Assignment for {employee_id}: {e}")
+
+	return default_shift
+
+
 def get_shift_window(
 	shift_type_doc: Any,
 	attendance_date: Union[datetime.date, str],

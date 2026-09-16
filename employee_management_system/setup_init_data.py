@@ -304,16 +304,18 @@ def run_setup():
 	else:
 		frappe.db.set_value("Employee", "EMP-002", "office_location", "Main Office")
 
-	# Shift Assignment for EMP-001
-	if not frappe.db.exists("Shift Assignment", {"employee": "EMP-001", "shift_type": "Day Shift"}):
-		frappe.get_doc({
-			"doctype": "Shift Assignment",
-			"employee": "EMP-001",
-			"shift_type": "Day Shift",
-			"start_date": "2026-01-01",
-			"status": "Active",
-		}).insert(ignore_permissions=True)
-		print("  ✓ Assigned Shift: EMP-001 -> Day Shift")
+	# Shift Assignment for all active employees
+	active_emps = frappe.get_all("Employee", filters={"status": "Active"}, fields=["name"])
+	for e in active_emps:
+		if not frappe.db.exists("Shift Assignment", {"employee": e.name, "status": "Active"}):
+			frappe.get_doc({
+				"doctype": "Shift Assignment",
+				"employee": e.name,
+				"shift_type": "Day Shift",
+				"start_date": "2026-01-01",
+				"status": "Active",
+			}).insert(ignore_permissions=True)
+			print(f"  ✓ Assigned Shift: {e.name} -> Day Shift")
 
 	frappe.db.commit()
 

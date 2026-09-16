@@ -241,10 +241,10 @@ def record_gps_checkin(log_type, latitude, longitude, accuracy, user=None):
 		get_active_shift_assignments,
 		get_shift_window,
 		process_attendance_for_employee_shift,
+		resolve_employee_shift_type,
 	)
 
-	active_shifts = get_active_shift_assignments(t.date(), employee=emp_id)
-	shift_name = active_shifts[0]["shift_type"] if active_shifts else None
+	shift_name = resolve_employee_shift_type(emp_id, t.date())
 	shift_start = None
 	shift_end = None
 	if shift_name and frappe.db.exists("Shift Type", shift_name):
@@ -354,23 +354,22 @@ def get_employee_attendance_status(employee_id=None, user=None):
 	# Active Shift
 	from employee_management_system.employee_management_system.shift_attendance import (
 		get_active_shift_assignments,
+		resolve_employee_shift_type,
 	)
 
 	today_date = nowdate()
-	active_shifts = get_active_shift_assignments(today_date, employee=emp_id)
+	shift_name = resolve_employee_shift_type(emp_id, today_date)
 	today_shift = None
-	if active_shifts:
-		shift_name = active_shifts[0]["shift_type"]
-		if frappe.db.exists("Shift Type", shift_name):
-			s = frappe.get_doc("Shift Type", shift_name)
-			today_shift = {
-				"name": s.name,
-				"shift_name": s.shift_name,
-				"start_time": str(s.start_time)[:8] if s.start_time else None,
-				"end_time": str(s.end_time)[:8] if s.end_time else None,
-				"late_entry_grace_period": s.late_entry_grace_period,
-				"early_exit_grace_period": s.early_exit_grace_period,
-			}
+	if shift_name and frappe.db.exists("Shift Type", shift_name):
+		s = frappe.get_doc("Shift Type", shift_name)
+		today_shift = {
+			"name": s.name,
+			"shift_name": s.shift_name,
+			"start_time": str(s.start_time)[:8] if s.start_time else None,
+			"end_time": str(s.end_time)[:8] if s.end_time else None,
+			"late_entry_grace_period": s.late_entry_grace_period,
+			"early_exit_grace_period": s.early_exit_grace_period,
+		}
 
 	# Check-in logs today
 	today_start = f"{today_date} 00:00:00"
@@ -385,12 +384,12 @@ def get_employee_attendance_status(employee_id=None, user=None):
 	is_clocked_in = bool(latest and latest.get("log_type") == "IN")
 
 	# Evaluate shift completion auto clock-out if shift has elapsed
-	if is_clocked_in and today_shift:
+	if is_clocked_in:
 		try:
 			from employee_management_system.employee_management_system.attendance.auto_clock_out_service import (
 				check_shift_completion_auto_clock_out,
 			)
-			auto_outs = check_shift_completion_auto_clock_out(today_date, employee_id=emp_id)
+			auto_outs = check_shift_completion_auto_clock_out(employee_id=emp_id)
 			if auto_outs:
 				latest = get_latest_checkin(emp_id)
 				is_clocked_in = bool(latest and latest.get("log_type") == "IN")

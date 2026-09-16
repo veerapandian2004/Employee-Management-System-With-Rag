@@ -764,7 +764,45 @@ flowchart TD
 4. **Perimeter Enforcement**: If distance exceeds `allowed_radius` (default 150m), request is rejected with exact distance feedback.
 5. **Sequence Enforcement**: Prevents duplicate clock-ins (`IN -> IN`) or clock-outs without active sessions (`OUT -> OUT` or `OUT` without `IN`).
 
-### 15.2 Shift Management UI & Company Holiday Calendar Flow
+### 15.2 Automated Clock-Out & Shift Completion Engine
+
+The system enforces automated workforce departure policies via `auto_clock_out_service.py` to prevent stale sessions and guarantee compliant attendance records:
+
+```mermaid
+flowchart TD
+    ClockedIn[Clocked-In Employee Session] --> Trigger{Evaluation Trigger}
+    
+    Trigger -->|1. Periodic Background Job| Sched[Frappe Scheduler: process_shift_completion_job]
+    Trigger -->|2. Geolocation Heartbeat (60s)| Ping[api.ping_location]
+    Trigger -->|3. UI Load / Sync| Status[api.get_my_attendance_status]
+    Trigger -->|4. Admin / HR Trigger| Recalc[api.recalculate_attendance]
+    
+    Sched & Ping & Status & Recalc --> ShiftRes[Resolve Active Shift via resolve_employee_shift_type<br/>Direct Assignment > Past Assignment > Checkin Shift > Default 'Day Shift' 09:00-17:00]
+    
+    ShiftRes --> CheckGeo{Left Geofence Perimeter?}
+    CheckGeo -->|YES: distance > allowed_radius| OutGeo[Auto Clock-Out: Reason 'Left Office Location'<br/>Timestamp: now_datetime]
+    
+    CheckGeo -->|NO| CheckShift{Current Time >= Shift End Time?}
+    CheckShift -->|YES and clocked in before end| OutShift[Auto Clock-Out: Reason 'Shift Completed'<br/>Timestamp: Exact scheduled shift_end]
+    CheckShift -->|YES and clocked in after end| OutOT[Auto Clock-Out: Reason 'Shift Completed'<br/>Timestamp: min(now, checkin + 8h)]
+    CheckShift -->|NO| KeepIn[Remain in 'Working' State]
+    
+    OutGeo & OutShift & OutOT --> RecordOUT[Insert OUT Employee Checkin<br/>Same Office Location + is_auto_clock_out=1]
+    RecordOUT --> UpsertAtt[Recalculate & Upsert tabAttendance<br/>out_time, working_hours, status, remarks]
+    UpsertAtt --> Notify[Emit Multi-Channel Notifications<br/>Notification Log & Realtime Socket Event]
+```
+
+#### Key Automated Clock-Out Behaviors:
+1. **Scheduled Shift Completion**: When an employee is still clocked in when their scheduled shift ends, the engine automatically clocks them out with reason `'Shift Completed'` at the exact scheduled shift end time.
+2. **Default Shift Fallback**: If an employee has no manual `tabShift Assignment` record, `resolve_employee_shift_type()` resolves company standard `"Day Shift"` (09:00 - 17:00), ensuring unassigned staff never stay clocked in indefinitely.
+3. **Location Geofence Monitoring**: If an employee leaves the authorized office radius during shift hours, they are automatically clocked out with reason `'Left Office Location'`.
+4. **Multi-Channel Synchronization**: Shift completion is evaluated on three levels:
+   - **Background Scheduler Cron** (`process_shift_completion_job` in `hooks.py`)
+   - **Heartbeat Endpoint** (`ping_location` every 60s)
+   - **Status Check** (`get_my_attendance_status` on page view / refresh)
+5. **Multi-Channel Notifications**: Immediately alerts the employee and administrators via `tabNotification Log` and Frappe real-time socket events.
+
+### 15.3 Shift Management UI & Company Holiday Calendar Flow
 Integrated within `ShiftManagementModule.jsx`, administrators and HR managers maintain shift scheduling and holiday master records:
 1. **Shift Types Tab**:
    - Lists all configured shifts with start/end times, grace periods, full/half-day thresholds, and active toggles.
@@ -777,7 +815,7 @@ Integrated within `ShiftManagementModule.jsx`, administrators and HR managers ma
    - Displays scheduled national and company holidays (`holiday_name`, `holiday_date`, `description`).
    - Adding a holiday immediately protects all employees from being marked absent on that date during auto-attendance runs.
 
-### 15.3 In-App Notification System Flow
+### 15.4 In-App Notification System Flow
 The application provides real-time notification alerts in `Header.jsx`:
 1. **Unread Counter Badge**: A vibrant red badge displays the count of unread notifications for the active user.
 2. **Notification Popover**: Clicking the bell icon opens a dropdown listing notifications with title, timestamp, and read status.

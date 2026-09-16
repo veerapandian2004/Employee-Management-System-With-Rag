@@ -757,6 +757,65 @@ class TestAutoClockOut(unittest.TestCase):
 		self.assertEqual(latest.get("clock_out_reason"), REASON_AUTO_CLOCK_OUT)
 		self.assertEqual(latest.get("office_location"), "Office A")
 
+	def test_14_shift_completion_without_explicit_shift_assignment_uses_default_shift(self):
+		"""
+		Rule 2 Enhancement: If an employee has NO explicit Shift Assignment,
+		the system falls back to the default shift ('Day Shift' / 'Test Day Shift')
+		and automatically clocks them out at scheduled shift end time.
+		"""
+		target_date = datetime.date(2026, 9, 15)
+		# Ensure EMP-001 has NO shift assignment
+		frappe.db.sql("DELETE FROM `tabShift Assignment` WHERE employee = 'EMP-001'")
+		frappe.db.commit()
+
+		clock_in_time = datetime.datetime.combine(target_date, datetime.time(9, 5, 0))
+		shift_end_time = datetime.datetime.combine(target_date, datetime.time(17, 0, 0))
+
+		# Clock in without shift specified
+		frappe.get_doc({
+			"doctype": "Employee Checkin",
+			"employee": "EMP-001",
+			"employee_name": "Test Auto Employee",
+			"time": clock_in_time,
+			"log_type": "IN",
+			"office_location": "Main Office",
+		}).insert(ignore_permissions=True)
+		frappe.db.commit()
+
+		# Assert clocked in
+		is_in, _ = is_employee_clocked_in("EMP-001")
+		self.assertTrue(is_in)
+
+		# Evaluate shift completion at 17:00
+		results = check_shift_completion_auto_clock_out(
+			target_date=target_date,
+			employee_id="EMP-001",
+			current_time=shift_end_time,
+		)
+		self.assertEqual(len(results), 1)
+		self.assertTrue(results[0]["auto_clocked_out"])
+		self.assertEqual(results[0]["reason"], REASON_SHIFT_COMPLETED)
+		self.assertEqual(str(results[0]["clock_out_time"]), str(shift_end_time))
+
+		# Verify latest checkin is OUT with Shift Completed
+		latest = get_latest_checkin("EMP-001")
+		self.assertEqual(latest.get("log_type"), "OUT")
+		self.assertEqual(latest.get("is_auto_clock_out"), 1)
+		self.assertEqual(latest.get("clock_out_reason"), REASON_SHIFT_COMPLETED)
+
+		# Verify Attendance record
+		att = frappe.db.get_value(
+			"Attendance",
+			{"employee": "EMP-001", "attendance_date": target_date},
+			["name", "out_time", "auto_clocked_out", "clock_out_reason", "working_hours"],
+			as_dict=True,
+		)
+		self.assertIsNotNone(att)
+		self.assertEqual(str(att.out_time), str(shift_end_time))
+		self.assertEqual(att.auto_clocked_out, 1)
+		self.assertEqual(att.clock_out_reason, REASON_SHIFT_COMPLETED)
+		self.assertAlmostEqual(float(att.working_hours), 7.92, places=1)
+
 
 if __name__ == "__main__":
 	unittest.main()

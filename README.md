@@ -96,6 +96,12 @@ flowchart TD
 - **Duplicate Prevention**: Reuses existing empty chat sessions to prevent creating redundant empty "New Chat" sessions when clicked repeatedly.
 - Conversation history sidebar with session switching, automatic pruning of empty duplicates, and delete capability.
 
+### 6. Automatic Clock-Out on Shift Completion & Default Shift Resolution
+- **Shift End Automated Clock-Out**: Employees still clocked in when their scheduled shift ends are automatically clocked out with exact shift end timestamp and reason `Shift Completed`.
+- **Default Shift Fallback**: Automatically resolves company standard `Day Shift` (09:00 - 17:00) when an employee lacks an explicit `Shift Assignment`, preventing unassigned employees from getting stuck in an indefinite "Working" state.
+- **Dual-Trigger Execution**: Synchronized via Frappe Scheduler periodic background jobs (`process_shift_completion_job`) and real-time frontend pulse endpoints (`ping_location`, `get_my_attendance_status`).
+- **Overtime & Multi-Day Punch Handling**: Evaluates punches against punch start date and closes sessions extending beyond max working hours.
+
 ---
 
 ## 🛠️ Technology Stack
@@ -118,12 +124,12 @@ flowchart TD
 
 ## 🧪 Testing & Code Quality
 
-The entire application is backed by **164 automated unit and integration tests** passing across 11 test suites:
+The entire application is backed by **168 automated unit and integration tests** passing across 11 test suites:
 
 ```bash
 cd /home/tui013/frappe-benchv/sites
 
-# 1. Automatic Clock-Out Suite (10 Tests)
+# 1. Automatic Clock-Out Suite (14 Tests)
 /home/tui013/frappe-benchv/env/bin/python ../apps/employee_management_system/employee_management_system/test_auto_clock_out.py
 
 # 2. GPS Attendance Security & Validation Suite (19 Tests)
@@ -157,7 +163,7 @@ cd /home/tui013/frappe-benchv/sites
 /home/tui013/frappe-benchv/env/bin/python ../apps/employee_management_system/employee_management_system/test_qdrant_knowledge.py
 ```
 
-*Result: 164/164 tests passing with zero errors.*
+*Result: 168/168 tests passing with zero errors.*
 
 ### Production Build
 ```bash

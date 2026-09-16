@@ -84,15 +84,22 @@ flowchart TD
 - Every entry stores `employee`, exact `time`, and `log_type` (`IN` or `OUT`).
 
 ### Step 3.3: Execution Triggers
-The attendance engine is triggered through three channels:
-1. **Hourly Background Job** (`process_auto_attendance_job` in `hooks.py`):
+The attendance engine is triggered through multiple synchronized channels:
+1. **Automated Shift Completion Job** (`process_shift_completion_job` in `hooks.py`):
+   - Hooked to Frappe Scheduler (`all` and `hourly`).
+   - Automatically scans all active employees with active `IN` checkins.
+   - Evaluates scheduled shift end times; if the shift has elapsed, automatically inserts an `OUT` punch with reason `Shift Completed` at the exact shift end time against the same office location.
+2. **Hourly Attendance Job** (`process_auto_attendance_job` in `hooks.py`):
    - Automatically runs every hour.
    - Evaluates active shift assignments for **yesterday** and **today**. This ensures that overnight shifts ending at 06:00 AM are finalized during the morning runs.
-2. **Daily Midnight Job** (`process_auto_attendance_daily` in `hooks.py`):
+3. **Daily Midnight Job** (`process_auto_attendance_daily` in `hooks.py`):
    - Automatically runs once a day.
    - Performs a retroactive **3-day reconciliation** to account for delayed log syncs from hardware.
-3. **On-Demand Whitelisted API** (`recalculate_attendance` in `api.py`):
-   - Allows HR Managers and Administrators to recalculate attendance on demand for any date, shift, or employee directly from the UI.
+4. **Real-Time Client Pulse Triggers**:
+   - **Heartbeat Endpoint** (`ping_location` in `api.py`): Receives periodic client pulses every 60 seconds; checks both shift completion and office geofence violations.
+   - **Status Synchronization** (`get_my_attendance_status` in `api.py`): Evaluates shift completion upon page load, tab focus, or manual sync, guaranteeing zero stale "Working" states.
+5. **On-Demand Whitelisted API** (`recalculate_attendance` in `api.py`):
+   - Allows HR Managers and Administrators to recalculate attendance on demand for any date, shift, or employee directly from the UI. Automatically runs shift completion clock-outs prior to calculation.
 
 ### Step 3.4: Time Window Calculation & Overnight Shift Handling
 For any given target attendance date $D$:
@@ -221,24 +228,28 @@ sequenceDiagram
 ---
 
 ## 6. Automated Test Suite Verification
-
-The attendance architecture is validated by **48 automated tests** across four dedicated test suites:
-
-### 6.1 Automatic Clock-Out Suite (`test_auto_clock_out.py` - 10 Tests)
-```bash
-cd /home/tui013/frappe-benchv/sites
-/home/tui013/frappe-benchv/env/bin/python /home/tui013/frappe-benchv/apps/employee_management_system/employee_management_system/test_auto_clock_out.py
-```
-1. `test_01_geofence_clockout_when_leaving_office`: Clocks out with reason `Left Office Location` when leaving geofence.
-2. `test_02_geofence_remains_clocked_in_when_inside_office`: Coordinates within allowed radius remain in Working state.
-3. `test_03_geofence_noop_when_not_clocked_in`: Safe no-op when not clocked in.
-4. `test_04_shift_completion_clockout_at_shift_end`: Clocks out at exact `shift_end` time with reason `Shift Completed`.
-5. `test_05_priority_left_office_before_shift_end`: Priority check: leaving office before shift end logs `Left Office Location`.
-6. `test_06_invalid_reason_raises_validation_error`: Enforces strict reason validation.
-7. `test_07_exact_attendance_record_fields`: Asserts date, time, reason, and auto flags in `tabAttendance`.
-8. `test_08_notifications_created_for_employee_and_admin`: Asserts `Notification Log` records for employee and administrator.
-9. `test_09_overnight_shift_completion_clockout`: Verifies cross-midnight overnight shift clocks out at 06:00 next day.
-10. `test_10_attendance_status_includes_auto_clock_out_fields`: Real-time status payload exposes auto clock-out details.
+ 
+ The attendance architecture is validated by **52 automated tests** across four dedicated test suites:
+ 
+ ### 6.1 Automatic Clock-Out Suite (`test_auto_clock_out.py` - 14 Tests)
+ ```bash
+ cd /home/tui013/frappe-benchv/sites
+ /home/tui013/frappe-benchv/env/bin/python /home/tui013/frappe-benchv/apps/employee_management_system/employee_management_system/test_auto_clock_out.py
+ ```
+ 1. `test_01_geofence_clockout_when_leaving_office`: Clocks out with reason `Left Office Location` when leaving geofence.
+ 2. `test_02_geofence_remains_clocked_in_when_inside_office`: Coordinates within allowed radius remain in Working state.
+ 3. `test_03_geofence_noop_when_not_clocked_in`: Safe no-op when not clocked in.
+ 4. `test_04_shift_completion_clockout_at_shift_end`: Clocks out at exact `shift_end` time with reason `Shift Completed`.
+ 5. `test_05_priority_left_office_before_shift_end`: Priority check: leaving office before shift end logs `Left Office Location`.
+ 6. `test_06_invalid_reason_raises_validation_error`: Enforces strict reason validation.
+ 7. `test_07_exact_attendance_record_fields`: Asserts date, time, reason, and auto flags in `tabAttendance`.
+ 8. `test_08_notifications_created_for_employee_and_admin`: Asserts `Notification Log` records for employee and administrator.
+ 9. `test_09_overnight_shift_completion_clockout`: Verifies cross-midnight overnight shift clocks out at 06:00 next day.
+ 10. `test_10_attendance_status_includes_auto_clock_out_fields`: Real-time status payload exposes auto clock-out details.
+ 11. `test_11_shift_completion_preserves_office_location`: Verifies auto clock-out punch is recorded against the exact office location of clock-in.
+ 12. `test_12_manual_clockout_prevents_duplicate_auto_clockout`: Verifies employees who manually clock out are not duplicated when shift end is reached.
+ 13. `test_13_auto_clock_out_reason_accepted`: Validates acceptance of `Auto Clock-Out` reason.
+ 14. `test_14_shift_completion_without_explicit_shift_assignment_uses_default_shift`: Validates automatic default shift fallback (`Day Shift` 09:00 - 17:00) and shift completion clock-out for unassigned employees.
 
 ### 6.2 GPS Attendance Security & Validation Suite (`test_gps_attendance.py` - 19 Tests)
 ```bash

@@ -139,17 +139,25 @@ def auto_clock_out_employee(
 		get_active_shift_assignments,
 		get_shift_window,
 		process_attendance_for_employee_shift,
+		resolve_employee_shift_type,
 	)
 
-	att_date = clock_out_datetime.date()
-	active_shifts = get_active_shift_assignments(att_date, employee=employee_id)
-	shift_name = active_shifts[0]["shift_type"] if active_shifts else None
-	shift_start = None
-	shift_end = None
+	# The attendance record is anchored on the check-in punch date (vital for overnight shifts)
+	chk_time = get_datetime(latest_chk.get("time")) if latest_chk else clock_out_datetime
+	att_date = chk_time.date() if chk_time else clock_out_datetime.date()
 
-	if shift_name and frappe.db.exists("Shift Type", shift_name):
+	shift_name = latest_chk.get("shift") if latest_chk else None
+	if not shift_name:
+		shift_name = resolve_employee_shift_type(employee_id, att_date)
+
+	shift_start = latest_chk.get("shift_start") if latest_chk else None
+	shift_end = latest_chk.get("shift_end") if latest_chk else None
+
+	if shift_name and frappe.db.exists("Shift Type", shift_name) and (not shift_start or not shift_end):
 		sdoc = frappe.get_doc("Shift Type", shift_name)
-		shift_start, shift_end, w_start, w_end, is_overnight = get_shift_window(sdoc, att_date)
+		s_start, s_end, w_start, w_end, is_overnight = get_shift_window(sdoc, att_date)
+		shift_start = shift_start or s_start
+		shift_end = shift_end or s_end
 
 	# 1. Insert OUT checkin log with auto clock-out metadata
 	checkin_doc = frappe.get_doc({
@@ -392,11 +400,11 @@ def check_shift_completion_auto_clock_out(
 	from employee_management_system.employee_management_system.shift_attendance import (
 		get_active_shift_assignments,
 		get_shift_window,
+		resolve_employee_shift_type,
 	)
 
 	now_dt = get_datetime(current_time) if current_time else now_datetime()
 	current_date = getdate(target_date) if target_date else now_dt.date()
-	yesterday_date = current_date - datetime.timedelta(days=1)
 
 	# Query all active employees with latest punch == 'IN'
 	filters = {"status": "Active"}
@@ -412,14 +420,13 @@ def check_shift_completion_auto_clock_out(
 		if not is_in or not latest_chk:
 			continue
 
-		# Resolve shift: check latest_chk first, then active shift assignments
+		chk_time = get_datetime(latest_chk.get("time"))
+		eval_date = chk_time.date() if chk_time else current_date
+
+		# Resolve shift: check latest_chk first, then active shift assignments for eval_date, then fallback
 		shift_name = latest_chk.get("shift")
 		if not shift_name:
-			assigned_shifts = get_active_shift_assignments(current_date, employee=eid)
-			if not assigned_shifts:
-				assigned_shifts = get_active_shift_assignments(yesterday_date, employee=eid)
-			if assigned_shifts:
-				shift_name = assigned_shifts[0]["shift_type"]
+			shift_name = resolve_employee_shift_type(eid, for_date=eval_date)
 
 		if not shift_name or not frappe.db.exists("Shift Type", shift_name):
 			continue
@@ -427,9 +434,6 @@ def check_shift_completion_auto_clock_out(
 		sdoc = frappe.get_doc("Shift Type", shift_name)
 
 		# Resolve shift window and scheduled shift_end
-		chk_time = get_datetime(latest_chk.get("time"))
-		eval_date = chk_time.date() if chk_time else current_date
-
 		if latest_chk.get("shift_end"):
 			shift_end = get_datetime(latest_chk.get("shift_end"))
 		else:
@@ -437,7 +441,6 @@ def check_shift_completion_auto_clock_out(
 
 		# Check condition: if current time is at or past scheduled shift_end, and employee is still clocked in
 		# Only auto clock out at shift_end if the active clock-in occurred before shift_end.
-		# If the employee clocked in after shift_end, do not clock them out with a past shift_end timestamp.
 		if now_dt >= shift_end and chk_time < shift_end:
 			# Auto clock out at exact shift_end timestamp against the SAME office location
 			clock_out_res = auto_clock_out_employee(
@@ -446,6 +449,17 @@ def check_shift_completion_auto_clock_out(
 				clock_out_datetime=shift_end,
 			)
 			results.append(clock_out_res)
+		elif now_dt >= shift_end and chk_time >= shift_end:
+			# If employee clocked in after scheduled shift_end (e.g. late/overtime),
+			# auto clock out if session exceeded 8 hours or past next day
+			if now_dt >= chk_time + datetime.timedelta(hours=8) or now_dt.date() > chk_time.date():
+				effective_out = min(now_dt, chk_time + datetime.timedelta(hours=8))
+				clock_out_res = auto_clock_out_employee(
+					employee_id=eid,
+					reason=REASON_SHIFT_COMPLETED,
+					clock_out_datetime=effective_out,
+				)
+				results.append(clock_out_res)
 
 	return results
 

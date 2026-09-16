@@ -2349,10 +2349,10 @@ def employee_checkin(employee=None, timestamp=None, log_type="IN", device_id=Non
 		get_active_shift_assignments,
 		get_shift_window,
 		process_attendance_for_employee_shift,
+		resolve_employee_shift_type,
 	)
 
-	active_shifts = get_active_shift_assignments(t.date(), employee=emp_id)
-	shift_name = active_shifts[0]["shift_type"] if active_shifts else None
+	shift_name = resolve_employee_shift_type(emp_id, t.date())
 	shift_start = None
 	shift_end = None
 	if shift_name and frappe.db.exists("Shift Type", shift_name):
@@ -2461,9 +2461,23 @@ def ping_location(latitude=None, longitude=None, accuracy=None):
 	)
 	from employee_management_system.employee_management_system.attendance.auto_clock_out_service import (
 		check_location_auto_clock_out,
+		check_shift_completion_auto_clock_out,
 	)
 
 	emp = get_authenticated_employee()
+
+	# Check shift completion auto clock-out first
+	shift_outs = check_shift_completion_auto_clock_out(employee_id=emp.name)
+	if shift_outs:
+		return {
+			"action": "auto_clocked_out",
+			"auto_clocked_out": True,
+			"reason": "Shift Completed",
+			"clock_out_time": str(shift_outs[0].get("clock_out_time")),
+			"details": shift_outs[0],
+			"message": "Scheduled shift completed. You have been automatically clocked out.",
+		}
+
 	return check_location_auto_clock_out(
 		employee_id=emp.name,
 		latitude=latitude,
@@ -2591,11 +2605,19 @@ def recalculate_attendance(attendance_date=None, shift_type=None, employee=None)
 	"""
 	_check_admin_or_hr()
 	from frappe.utils import nowdate
+	from employee_management_system.employee_management_system.attendance.auto_clock_out_service import (
+		check_shift_completion_auto_clock_out,
+	)
 	from employee_management_system.employee_management_system.shift_attendance import (
 		process_auto_attendance_for_date,
 	)
 
 	target = attendance_date or nowdate()
+	try:
+		check_shift_completion_auto_clock_out(target_date=target, employee_id=employee)
+	except Exception as e:
+		frappe.logger().error(f"Error checking shift completion during recalculate_attendance: {e}")
+
 	results = process_auto_attendance_for_date(
 		target_date=target,
 		shift_type_name=shift_type,

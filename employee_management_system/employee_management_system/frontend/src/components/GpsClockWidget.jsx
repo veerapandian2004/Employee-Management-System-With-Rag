@@ -101,11 +101,14 @@ export function GpsClockWidget({ onAttendanceUpdated, refreshTrigger }) {
     };
   }, [statusData?.is_clocked_in]);
 
-  // Periodic location-based geofence monitoring while clocked in
+  // Periodic location-based geofence & shift completion monitoring while clocked in
   useEffect(() => {
     if (statusData?.is_clocked_in) {
-      const checkGeofence = async () => {
-        if (!navigator.geolocation) return;
+      const checkGeofenceAndShift = async () => {
+        if (!navigator.geolocation) {
+          await fetchStatus();
+          return;
+        }
         navigator.geolocation.getCurrentPosition(
           async (pos) => {
             try {
@@ -115,9 +118,15 @@ export function GpsClockWidget({ onAttendanceUpdated, refreshTrigger }) {
                 accuracy: pos.coords.accuracy,
               });
               if (res?.auto_clocked_out) {
-                setErrorMessage(
-                  `⚠️ Automatic Clock-Out: You left the permitted office geofence (${res.distance ? Math.round(res.distance) + "m" : "outside"}). Reason: ${res.reason}.`
-                );
+                if (res.reason === "Shift Completed") {
+                  setSuccessMessage(
+                    "🕒 Scheduled shift completed. Session clocked out automatically."
+                  );
+                } else {
+                  setErrorMessage(
+                    `⚠️ Automatic Clock-Out: You left the permitted office geofence (${res.distance ? Math.round(res.distance) + "m" : "outside"}). Reason: ${res.reason}.`
+                  );
+                }
                 await fetchStatus();
                 if (onAttendanceUpdated) onAttendanceUpdated();
               }
@@ -125,15 +134,17 @@ export function GpsClockWidget({ onAttendanceUpdated, refreshTrigger }) {
               console.warn("Geofence heartbeat ping error:", err);
             }
           },
-          (err) => {
+          async (err) => {
             console.warn("Geofence geolocation warning:", err);
+            // Even if GPS fails or is denied, refresh status so backend can check shift completion
+            await fetchStatus();
           },
           { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
         );
       };
 
-      // Check geofence every 60 seconds
-      heartbeatRef.current = setInterval(checkGeofence, 60000);
+      // Check geofence and shift completion every 60 seconds
+      heartbeatRef.current = setInterval(checkGeofenceAndShift, 60000);
     } else {
       if (heartbeatRef.current) clearInterval(heartbeatRef.current);
     }
