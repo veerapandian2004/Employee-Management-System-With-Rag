@@ -152,14 +152,14 @@ export function LoginModule({ onLoginSuccess }) {
                 <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 theme-blue:text-blue-200 block">
                   Email / Username
                 </label>
-                <div className="relative">
-                  <Mail className="absolute left-3.5 top-2.5 h-4 w-4 text-slate-400 dark:text-slate-400 theme-blue:text-blue-400" />
+                <div className="relative group">
+                  <Mail className="absolute left-3.5 top-2.5 h-4 w-4 text-slate-400 group-focus-within:text-indigo-600 dark:text-slate-400 dark:group-focus-within:text-indigo-400 theme-blue:text-blue-400 theme-blue:group-focus-within:text-cyan-400 transition-colors pointer-events-none" />
                   <Input
                     type="text"
                     placeholder="admin@ems.com"
                     value={usr}
                     onChange={(e) => setUsr(e.target.value)}
-                    className="pl-10 bg-slate-50 border-slate-300 text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-indigo-600 dark:bg-slate-800/90 dark:border-slate-700 dark:text-white dark:placeholder:text-slate-400 dark:focus:border-indigo-500 theme-blue:bg-[#18274d] theme-blue:border-[#24396b] theme-blue:text-blue-50 theme-blue:placeholder:text-blue-400 theme-blue:focus:border-blue-400 text-sm"
+                    className="pl-10 bg-slate-50 border-slate-300 text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-indigo-600 focus:text-slate-900 dark:bg-slate-800/90 dark:border-slate-700 dark:text-white dark:placeholder:text-slate-500 dark:focus:bg-slate-800 dark:focus:border-indigo-500 dark:focus:text-white theme-blue:bg-[#18274d] theme-blue:border-[#24396b] theme-blue:text-blue-50 theme-blue:placeholder:text-blue-400/70 theme-blue:focus:bg-[#18274d] theme-blue:focus:border-blue-400 theme-blue:focus:text-blue-50 text-sm"
                     required
                     disabled={loading}
                   />
@@ -175,14 +175,14 @@ export function LoginModule({ onLoginSuccess }) {
                     Full name without space (e.g. SarahJenkins)
                   </span>
                 </div>
-                <div className="relative">
-                  <Lock className="absolute left-3.5 top-2.5 h-4 w-4 text-slate-400 dark:text-slate-400 theme-blue:text-blue-400" />
+                <div className="relative group">
+                  <Lock className="absolute left-3.5 top-2.5 h-4 w-4 text-slate-400 group-focus-within:text-indigo-600 dark:text-slate-400 dark:group-focus-within:text-indigo-400 theme-blue:text-blue-400 theme-blue:group-focus-within:text-cyan-400 transition-colors pointer-events-none" />
                   <Input
                     type={showPassword ? "text" : "password"}
                     placeholder="e.g. SarahJenkins"
                     value={pwd}
                     onChange={(e) => setPwd(e.target.value)}
-                    className="pl-10 pr-10 bg-slate-50 border-slate-300 text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-indigo-600 dark:bg-slate-800/90 dark:border-slate-700 dark:text-white dark:placeholder:text-slate-400 dark:focus:border-indigo-500 theme-blue:bg-[#18274d] theme-blue:border-[#24396b] theme-blue:text-blue-50 theme-blue:placeholder:text-blue-400 theme-blue:focus:border-blue-400 text-sm"
+                    className="pl-10 pr-10 bg-slate-50 border-slate-300 text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-indigo-600 focus:text-slate-900 dark:bg-slate-800/90 dark:border-slate-700 dark:text-white dark:placeholder:text-slate-500 dark:focus:bg-slate-800 dark:focus:border-indigo-500 dark:focus:text-white theme-blue:bg-[#18274d] theme-blue:border-[#24396b] theme-blue:text-blue-50 theme-blue:placeholder:text-blue-400/70 theme-blue:focus:bg-[#18274d] theme-blue:focus:border-blue-400 theme-blue:focus:text-blue-50 text-sm"
                     required
                     disabled={loading}
                   />

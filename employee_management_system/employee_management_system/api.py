@@ -536,11 +536,68 @@ def get_employees():
 			order_by="modified desc",
 		)
 
+	# Resolve active approved leaves and attendance on leave for today
+	today = nowdate()
+	active_leaves = []
+	if frappe.db.exists("DocType", "Leave Application"):
+		active_leaves = frappe.get_all(
+			"Leave Application",
+			filters={
+				"status": "Approved",
+				"from_date": ["<=", today],
+				"to_date": [">=", today],
+			},
+			fields=["employee"],
+		)
+
+	today_attendance_leaves = []
+	if frappe.db.exists("DocType", "Attendance"):
+		today_attendance_leaves = frappe.get_all(
+			"Attendance",
+			filters={"attendance_date": today, "status": "On Leave"},
+			fields=["employee"],
+		)
+
+	on_leave_identifiers = set()
+	for l in active_leaves:
+		if l.get("employee"):
+			on_leave_identifiers.add(str(l["employee"]).strip())
+	for a in today_attendance_leaves:
+		if a.get("employee"):
+			on_leave_identifiers.add(str(a["employee"]).strip())
+
 	for r in records:
 		if "naming_series" not in r or not r.get("naming_series"):
 			r["naming_series"] = r.get("name")
 		if "full_name" not in r or not r.get("full_name"):
 			r["full_name"] = r.get("name")
+
+		is_on_leave = (
+			(r.get("name") and str(r["name"]).strip() in on_leave_identifiers)
+			or (r.get("naming_series") and str(r["naming_series"]).strip() in on_leave_identifiers)
+			or (r.get("full_name") and str(r["full_name"]).strip() in on_leave_identifiers)
+			or (r.get("email") and str(r["email"]).strip() in on_leave_identifiers)
+			or r.get("status") == "On Leave"
+		)
+
+		if is_on_leave:
+			r["status"] = "On Leave"
+			r["is_on_leave"] = True
+			if frappe.db.has_column("Employee", "status"):
+				curr_db_status = frappe.db.get_value("Employee", r.get("name"), "status")
+				if curr_db_status != "On Leave":
+					try:
+						frappe.db.set_value("Employee", r.get("name"), "status", "On Leave", update_modified=False)
+					except Exception:
+						pass
+		else:
+			if r.get("status") == "On Leave":
+				r["status"] = "Active"
+				r["is_on_leave"] = False
+				try:
+					frappe.db.set_value("Employee", r.get("name"), "status", "Active", update_modified=False)
+				except Exception:
+					pass
 
 	return records
 
@@ -1128,6 +1185,15 @@ def update_leave_status(name, status):
 		# Immediate Attendance Auto Sync in transaction
 		_sync_leave_to_attendance(doc)
 
+		# Immediate Employee Status update if leave covers today
+		today = nowdate()
+		if getdate(doc.from_date) <= getdate(today) <= getdate(doc.to_date):
+			if frappe.db.exists("Employee", doc.employee):
+				try:
+					frappe.db.set_value("Employee", doc.employee, "status", "On Leave", update_modified=False)
+				except Exception:
+					pass
+
 		# Send In-App Notification
 		emp_user = _get_user_for_employee(doc.employee)
 		_create_in_app_notification(
@@ -1147,6 +1213,23 @@ def update_leave_status(name, status):
 
 		if old_status == "Approved":
 			_revert_leave_attendance(doc)
+			today = nowdate()
+			other_leave = frappe.db.exists(
+				"Leave Application",
+				{
+					"employee": doc.employee,
+					"status": "Approved",
+					"name": ["!=", doc.name],
+					"from_date": ["<=", today],
+					"to_date": [">=", today],
+				},
+			)
+			if not other_leave and frappe.db.exists("Employee", doc.employee):
+				if frappe.db.get_value("Employee", doc.employee, "status") == "On Leave":
+					try:
+						frappe.db.set_value("Employee", doc.employee, "status", "Active", update_modified=False)
+					except Exception:
+						pass
 
 		# Send In-App Notification
 		emp_user = _get_user_for_employee(doc.employee)
@@ -1213,6 +1296,23 @@ def cancel_leave_application(name, reason=None):
 	# Revert attendance if it was approved
 	if old_status == "Approved":
 		_revert_leave_attendance(doc)
+		today = nowdate()
+		other_leave = frappe.db.exists(
+			"Leave Application",
+			{
+				"employee": doc.employee,
+				"status": "Approved",
+				"name": ["!=", doc.name],
+				"from_date": ["<=", today],
+				"to_date": [">=", today],
+			},
+		)
+		if not other_leave and frappe.db.exists("Employee", doc.employee):
+			if frappe.db.get_value("Employee", doc.employee, "status") == "On Leave":
+				try:
+					frappe.db.set_value("Employee", doc.employee, "status", "Active", update_modified=False)
+				except Exception:
+					pass
 
 	# Send in-app notification
 	emp_user = _get_user_for_employee(doc.employee)
@@ -2335,7 +2435,7 @@ def employee_checkin(employee=None, timestamp=None, log_type="IN", device_id=Non
 	from employee_management_system.employee_management_system.attendance.checkin_service import (
 		validate_checkin_sequence,
 	)
-	validate_checkin_sequence(emp_id, log_type)
+	validate_checkin_sequence(emp_id, log_type, checkin_date=t.date())
 
 	# Resolve office location
 	office_location = frappe.db.get_value("Employee", emp_id, "office_location")

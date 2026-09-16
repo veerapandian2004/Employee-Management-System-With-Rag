@@ -191,11 +191,11 @@ export function Header({
 
       {/* Center Search & Actions */}
       <div className="flex items-center space-x-2 sm:space-x-3">
-        <div className="relative w-32 xs:w-44 sm:w-64 md:w-80">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400 theme-blue:text-blue-400" />
+        <div className="relative group w-32 xs:w-44 sm:w-64 md:w-80">
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400 group-focus-within:text-indigo-600 dark:text-slate-400 dark:group-focus-within:text-indigo-400 theme-blue:text-blue-400 theme-blue:group-focus-within:text-cyan-400 transition-colors pointer-events-none" />
           <Input
             placeholder={`Search ${activeTabName}...`}
-            className="pl-9 pr-3 bg-slate-50 border-slate-200 text-xs sm:text-sm focus:bg-white dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200 theme-blue:bg-[#18274d] theme-blue:border-[#24396b] theme-blue:text-blue-100 transition-colors"
+            className="pl-9 pr-3 bg-slate-50 border-slate-200 text-xs sm:text-sm focus:bg-white focus:text-slate-900 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200 dark:focus:bg-slate-800 dark:focus:text-slate-100 theme-blue:bg-[#18274d] theme-blue:border-[#24396b] theme-blue:text-blue-100 theme-blue:focus:bg-[#18274d] theme-blue:focus:text-blue-50 transition-colors"
             value={searchValue || ""}
             onChange={(e) => onSearchChange && onSearchChange(e.target.value)}
           />

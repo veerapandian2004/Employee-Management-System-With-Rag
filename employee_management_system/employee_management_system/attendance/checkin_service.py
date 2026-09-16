@@ -135,14 +135,76 @@ def get_latest_checkin(employee_id):
 	return checkins[0] if checkins else None
 
 
-def validate_checkin_sequence(employee_id, requested_type):
+def is_employee_on_leave_for_date(employee_id, check_date=None):
 	"""
-	Enforces strict IN -> OUT -> IN -> OUT sequence.
+	Checks if the employee is on approved leave for the specified date.
+	Returns (is_on_leave: bool, leave_type: str, reason: str, leave_app_name: str)
+	"""
+	from frappe.utils import getdate, nowdate
+	if not check_date:
+		check_date = nowdate()
+	check_d = getdate(check_date)
+
+	# 1. Check tabLeave Application for Approved leave overlapping check_d
+	if frappe.db.exists("DocType", "Leave Application"):
+		leaves = frappe.get_all(
+			"Leave Application",
+			filters={
+				"employee": employee_id,
+				"status": "Approved",
+				"from_date": ["<=", check_d],
+				"to_date": [">=", check_d],
+			},
+			fields=["name", "leave_type", "reason", "from_date", "to_date"],
+			limit=1,
+		)
+		if leaves:
+			lt = leaves[0].get("leave_type") or "Leave"
+			return True, lt, leaves[0].get("reason"), leaves[0].get("name")
+
+	# 2. Check tabAttendance for record with status "On Leave" on check_d
+	if frappe.db.exists("DocType", "Attendance"):
+		att = frappe.db.get_value(
+			"Attendance",
+			{"employee": employee_id, "attendance_date": check_d, "status": "On Leave"},
+			["name", "leave_type", "remarks", "leave_application"],
+			as_dict=True,
+		)
+		if att:
+			lt = att.get("leave_type") or "Leave"
+			return True, lt, att.get("remarks"), att.get("leave_application")
+
+	# 3. Check tabEmployee status
+	emp_status = frappe.db.get_value("Employee", employee_id, "status")
+	if emp_status == "On Leave":
+		return True, "Leave", "Marked On Leave in Employee profile", None
+
+	return False, None, None, None
+
+
+def validate_checkin_sequence(employee_id, requested_type, checkin_date=None):
+	"""
+	Enforces strict attendance validation:
+	1. Employee must NOT be on approved leave on the target date.
+	2. Strict IN -> OUT -> IN -> OUT sequence.
 	Rejects:
+	- Any clocking attempt when employee is on approved leave
 	- IN -> IN (Already clocked in)
 	- OUT -> OUT (Already clocked out)
 	- OUT without prior valid IN
 	"""
+	from frappe.utils import nowdate
+	target_d = checkin_date or nowdate()
+	on_leave, lt, reason, _ = is_employee_on_leave_for_date(employee_id, target_d)
+	if on_leave:
+		frappe.throw(
+			_(
+				f"Attendance not allowed: You have an approved leave on this date ({target_d}) [{lt}]. "
+				f"Clock-in and clock-out are not permitted during approved leave."
+			),
+			title=_("On Leave - Clocking Disabled"),
+		)
+
 	latest = get_latest_checkin(employee_id)
 
 	req = (requested_type or "IN").strip().upper()
@@ -182,6 +244,9 @@ def record_gps_checkin(log_type, latitude, longitude, accuracy, user=None):
 	log_type = (log_type or "IN").strip().upper()
 	if log_type not in ("IN", "OUT"):
 		log_type = "IN"
+
+	# Validate sequence and leave status immediately before distance checks
+	validate_checkin_sequence(emp_id, log_type)
 
 	# Validate coordinates
 	lat, lon = validate_coordinates(latitude, longitude)
@@ -456,20 +521,34 @@ def get_employee_attendance_status(employee_id=None, user=None):
 		auto_clocked_out = is_latest_auto_out or bool(today_att and today_att.get("auto_clocked_out") and today_att.get("out_time"))
 		clock_out_reason = (latest.get("clock_out_reason") if is_latest_auto_out else None) or (today_att.get("clock_out_reason") if auto_clocked_out and today_att else None)
 		auto_clock_out_time = (str(latest.get("time")) if is_latest_auto_out else None) or (str(today_att.get("auto_clock_out_time")) if auto_clocked_out and today_att and today_att.get("auto_clock_out_time") else None)
+	# Check if employee is on approved leave today
+	on_leave, leave_type_name, leave_reason, leave_app_id = is_employee_on_leave_for_date(emp_id, today_date)
+
+	if on_leave:
+		current_status = "On Leave"
 
 	return {
 		"employee": emp_id,
 		"employee_name": emp.get("full_name") or emp_id,
 		"is_clocked_in": is_clocked_in,
 		"current_status": current_status,
+		"is_clocked_in": False if on_leave else is_clocked_in,
+		"is_on_leave": on_leave,
+		"leave_type": leave_type_name,
+		"leave_reason": leave_reason,
+		"leave_application": leave_app_id,
+		"clocking_allowed": not on_leave,
+		"current_status": "On Leave" if on_leave else current_status,
 		"last_log_type": latest.get("log_type") if latest else None,
 		"clock_in_time": clock_in_time or (str(latest.get("time")) if is_clocked_in else None),
 		"clock_out_time": clock_out_time,
 		"working_duration_seconds": working_seconds,
+		"working_duration_seconds": 0 if on_leave else working_seconds,
 		"office": office,
 		"today_shift": today_shift,
 		"today_attendance": today_att,
 		"auto_clocked_out": auto_clocked_out,
 		"clock_out_reason": clock_out_reason,
 		"auto_clock_out_time": auto_clock_out_time,
+		"message": f"You are on approved leave today ({leave_type_name}). Clock-in is not allowed." if on_leave else None,
 	}

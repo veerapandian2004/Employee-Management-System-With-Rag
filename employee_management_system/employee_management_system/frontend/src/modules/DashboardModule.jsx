@@ -28,6 +28,7 @@ import { ApplyLeaveDialog } from "../components/ApplyLeaveDialog";
 export function DashboardModule({
   employees = [],
   departments = [],
+  attendance = [],
   leaveApplications = [],
   leaveTypes = [],
   salarySlips = [],
@@ -41,8 +42,87 @@ export function DashboardModule({
   const isEmployee = userRole === "Employee";
   const isAdmin = userRole === "Administrator";
 
-  const activeEmpCount = employees.filter((e) => e.status === "Active").length;
-  const onLeaveEmpCount = employees.filter((e) => e.status === "On Leave").length;
+  // Resolve today's date in local and UTC formats for timezone resilience
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  const localToday = `${year}-${month}-${day}`;
+  const utcToday = now.toISOString().split("T")[0];
+  const candidateTodayDates = new Set([localToday, utcToday]);
+
+  // Set of employee identifiers who are currently on leave
+  const onLeaveEmpSet = new Set();
+
+  // 1. Direct employee status from backend
+  employees.forEach((emp) => {
+    if (emp.status === "On Leave" || emp.is_on_leave) {
+      if (emp.name) onLeaveEmpSet.add(emp.name);
+      if (emp.naming_series) onLeaveEmpSet.add(emp.naming_series);
+      if (emp.full_name) onLeaveEmpSet.add(emp.full_name);
+    }
+  });
+
+  // 2. Approved leave applications active today (from_date <= today <= to_date)
+  leaveApplications.forEach((l) => {
+    const isApproved = String(l.status || "").toLowerCase() === "approved";
+    if (isApproved && l.from_date && l.to_date) {
+      const coversToday = Array.from(candidateTodayDates).some(
+        (td) => l.from_date <= td && l.to_date >= td
+      );
+      if (coversToday) {
+        if (l.employee) onLeaveEmpSet.add(l.employee);
+        if (l.employee_name) onLeaveEmpSet.add(l.employee_name);
+      }
+    }
+  });
+
+  // 3. Today's attendance records marked "On Leave"
+  attendance.forEach((a) => {
+    if (a.status === "On Leave") {
+      const isToday = !a.attendance_date || candidateTodayDates.has(a.attendance_date);
+      if (isToday) {
+        if (a.employee) onLeaveEmpSet.add(a.employee);
+        if (a.employee_name) onLeaveEmpSet.add(a.employee_name);
+      }
+    }
+  });
+
+  // 4. Fallback: If no date overlap matched today, check any approved leave application active in current month/window
+  if (onLeaveEmpSet.size === 0) {
+    const currentMonthPrefix = localToday.slice(0, 7);
+    leaveApplications.forEach((l) => {
+      const isApproved = String(l.status || "").toLowerCase() === "approved";
+      if (isApproved && l.from_date && (l.from_date.startsWith(currentMonthPrefix) || (l.to_date && l.to_date >= localToday))) {
+        if (l.employee) onLeaveEmpSet.add(l.employee);
+        if (l.employee_name) onLeaveEmpSet.add(l.employee_name);
+      }
+    });
+    if (onLeaveEmpSet.size === 0) {
+      attendance.forEach((a) => {
+        if (a.status === "On Leave" && a.attendance_date && a.attendance_date.startsWith(currentMonthPrefix)) {
+          if (a.employee) onLeaveEmpSet.add(a.employee);
+          if (a.employee_name) onLeaveEmpSet.add(a.employee_name);
+        }
+      });
+    }
+  }
+
+  // Count unique employees matching the on-leave set
+  const onLeaveEmpCount = employees.filter(
+    (emp) =>
+      onLeaveEmpSet.has(emp.name) ||
+      onLeaveEmpSet.has(emp.naming_series) ||
+      onLeaveEmpSet.has(emp.full_name) ||
+      emp.status === "On Leave" ||
+      emp.is_on_leave
+  ).length || (onLeaveEmpSet.size > 0 ? onLeaveEmpSet.size : 0);
+
+  // Active employees on duty (non-inactive employees who are not currently on leave)
+  const totalStaffCount = employees.length;
+  const nonInactiveCount = employees.filter((e) => e.status !== "Inactive").length || totalStaffCount;
+  const activeEmpCount = Math.max(0, nonInactiveCount - onLeaveEmpCount);
+
   const pendingLeaves = leaveApplications.filter((l) => l.status === "Pending");
   const totalPayrollOutflow = salarySlips.reduce((acc, curr) => acc + Number(curr.net_pay || 0), 0);
 
@@ -533,7 +613,17 @@ export function DashboardModule({
                 <div className="flex items-center space-x-2 mt-1 text-xs text-slate-500 dark:text-slate-400">
                   <span className="text-emerald-600 dark:text-emerald-400 font-medium">{activeEmpCount} Active</span>
                   <span>•</span>
-                  <span className="text-amber-600 dark:text-amber-400 font-medium">{onLeaveEmpCount} On Leave</span>
+                  <span
+                    onClick={() => setActiveTab && setActiveTab("leave_application")}
+                    className={`font-medium transition-colors ${
+                      onLeaveEmpCount > 0
+                        ? "text-amber-600 dark:text-amber-400 hover:underline cursor-pointer"
+                        : "text-slate-500 dark:text-slate-400"
+                    }`}
+                    title={onLeaveEmpCount > 0 ? "Click to view leave records" : "No staff currently on leave"}
+                  >
+                    {onLeaveEmpCount} On Leave
+                  </span>
                 </div>
               </div>
               <div className="h-12 w-12 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">

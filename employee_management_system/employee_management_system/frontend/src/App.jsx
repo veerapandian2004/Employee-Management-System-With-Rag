@@ -733,6 +733,7 @@ export default function App() {
               <AttendanceModule
                 attendance={attendance}
                 employees={employees}
+                leaveApplications={leaveApplications}
                 userRole={userRole}
                 currentUser={currentUser}
                 onRefreshData={loadBackendData}

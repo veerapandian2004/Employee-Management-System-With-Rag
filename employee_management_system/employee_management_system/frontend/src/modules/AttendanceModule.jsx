@@ -11,6 +11,7 @@ import {
   LogOut,
   AlertCircle,
   CheckCircle2,
+  CalendarOff,
 } from "lucide-react";
 import { Card, CardContent } from "../components/ui/card";
 import { Button } from "../components/ui/button";
@@ -39,6 +40,7 @@ import { GpsClockWidget } from "../components/GpsClockWidget";
 export function AttendanceModule({
   attendance = [],
   employees = [],
+  leaveApplications = [],
   userRole = "Administrator",
   currentUser = null,
   onRefreshData,
@@ -148,7 +150,90 @@ export function AttendanceModule({
     }
   };
 
+  // Resolve today's date in local and UTC formats for timezone resilience
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  const localToday = `${year}-${month}-${day}`;
+  const utcToday = now.toISOString().split("T")[0];
+  const candidateTodayDates = new Set([localToday, utcToday]);
+
+  // Current user identifiers
+  const userEmpIdentifiers = new Set();
+  if (currentUser?.employee) {
+    if (currentUser.employee.name) userEmpIdentifiers.add(currentUser.employee.name);
+    if (currentUser.employee.naming_series) userEmpIdentifiers.add(currentUser.employee.naming_series);
+    if (currentUser.employee.full_name) userEmpIdentifiers.add(currentUser.employee.full_name);
+  }
+  if (currentUser?.full_name) userEmpIdentifiers.add(currentUser.full_name);
+  if (currentUser?.user) userEmpIdentifiers.add(currentUser.user);
+
+  // Find linked employee object in employees list if available
+  const currentEmpRecord = employees.find((emp) =>
+    (emp.name && userEmpIdentifiers.has(emp.name)) ||
+    (emp.naming_series && userEmpIdentifiers.has(emp.naming_series)) ||
+    (emp.user_id && userEmpIdentifiers.has(emp.user_id)) ||
+    (emp.email && userEmpIdentifiers.has(emp.email))
+  );
+  if (currentEmpRecord) {
+    if (currentEmpRecord.name) userEmpIdentifiers.add(currentEmpRecord.name);
+    if (currentEmpRecord.naming_series) userEmpIdentifiers.add(currentEmpRecord.naming_series);
+    if (currentEmpRecord.full_name) userEmpIdentifiers.add(currentEmpRecord.full_name);
+  }
+
+  // Check if current user is on approved leave today
+  let isUserOnLeaveToday = false;
+  let userLeaveType = "Approved Leave";
+
+  if (currentEmpRecord && (currentEmpRecord.status === "On Leave" || currentEmpRecord.is_on_leave)) {
+    isUserOnLeaveToday = true;
+    userLeaveType = currentEmpRecord.leave_type || "Approved Leave";
+  }
+
+  if (!isUserOnLeaveToday && userEmpIdentifiers.size > 0) {
+    // Check approved leave applications
+    const activeApp = leaveApplications.find((l) => {
+      const isApproved = String(l.status || "").toLowerCase() === "approved";
+      if (!isApproved) return false;
+      const matchesEmp =
+        (l.employee && userEmpIdentifiers.has(l.employee)) ||
+        (l.employee_name && userEmpIdentifiers.has(l.employee_name));
+      if (!matchesEmp) return false;
+      return Array.from(candidateTodayDates).some(
+        (td) => (!l.from_date || l.from_date <= td) && (!l.to_date || l.to_date >= td)
+      );
+    });
+    if (activeApp) {
+      isUserOnLeaveToday = true;
+      userLeaveType = activeApp.leave_type || "Approved Leave";
+    }
+  }
+
+  if (!isUserOnLeaveToday && userEmpIdentifiers.size > 0) {
+    // Check today's attendance record with status "On Leave"
+    const onLeaveAtt = attendance.find((a) => {
+      if (a.status !== "On Leave") return false;
+      const matchesEmp =
+        (a.employee && userEmpIdentifiers.has(a.employee)) ||
+        (a.employee_name && userEmpIdentifiers.has(a.employee_name));
+      if (!matchesEmp) return false;
+      return !a.attendance_date || candidateTodayDates.has(a.attendance_date);
+    });
+    if (onLeaveAtt) {
+      isUserOnLeaveToday = true;
+      userLeaveType = onLeaveAtt.leave_type || "Approved Leave";
+    }
+  }
+
   const handleClockIn = async () => {
+    if (isUserOnLeaveToday) {
+      showNotification(
+        `Attendance not allowed: You have an approved leave on this date (${userLeaveType}).`,
+        "error"
+      );
+      return;
+    }
     try {
       let res;
       try {
@@ -181,6 +266,13 @@ export function AttendanceModule({
   };
 
   const handleClockOut = async () => {
+    if (isUserOnLeaveToday) {
+      showNotification(
+        `Attendance not allowed: You have an approved leave on this date (${userLeaveType}).`,
+        "error"
+      );
+      return;
+    }
     try {
       let res;
       try {
@@ -265,6 +357,29 @@ export function AttendanceModule({
               >
                 <LogOut className="mr-1.5 h-3.5 w-3.5 text-amber-600" /> Clock OUT
               </Button>
+              {isUserOnLeaveToday ? (
+                <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border border-amber-500/40 bg-amber-50/90 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 text-xs font-semibold shadow-xs">
+                  <CalendarOff className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                  <span>On Leave Today ({userLeaveType}) — Clock-in Disabled</span>
+                </div>
+              ) : (
+                <>
+                  <Button
+                    onClick={handleClockIn}
+                    variant="outline"
+                    className="border-emerald-600 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-500 dark:text-emerald-400 font-medium shadow-sm text-xs h-9 cursor-pointer"
+                  >
+                    <LogIn className="mr-1.5 h-3.5 w-3.5 text-emerald-600" /> Clock IN
+                  </Button>
+                  <Button
+                    onClick={handleClockOut}
+                    variant="outline"
+                    className="border-amber-600 text-amber-700 hover:bg-amber-50 dark:border-amber-500 dark:text-amber-400 font-medium shadow-sm text-xs h-9 cursor-pointer"
+                  >
+                    <LogOut className="mr-1.5 h-3.5 w-3.5 text-amber-600" /> Clock OUT
+                  </Button>
+                </>
+              )}
             </>
           )}
 

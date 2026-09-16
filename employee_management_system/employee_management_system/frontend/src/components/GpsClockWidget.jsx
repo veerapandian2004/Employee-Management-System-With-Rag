@@ -11,6 +11,7 @@ import {
   RefreshCw,
   ShieldCheck,
   Radio,
+  CalendarOff,
 } from "lucide-react";
 import { Card, CardContent } from "./ui/card";
 import { Button } from "./ui/button";
@@ -208,7 +209,18 @@ export function GpsClockWidget({ onAttendanceUpdated, refreshTrigger }) {
     });
   };
 
+  const isOnLeave = Boolean(
+    statusData?.is_on_leave ||
+    statusData?.current_status === "On Leave" ||
+    (statusData?.clocking_allowed === false && statusData?.leave_type)
+  );
+  const leaveType = statusData?.leave_type || "Approved Leave";
+
   const handleClockIn = async () => {
+    if (isOnLeave) {
+      setErrorMessage(`Attendance not allowed: You have an approved leave on this date (${leaveType}).`);
+      return;
+    }
     setErrorMessage(null);
     setSuccessMessage(null);
     setActionLoading(true);
@@ -235,6 +247,10 @@ export function GpsClockWidget({ onAttendanceUpdated, refreshTrigger }) {
   };
 
   const handleClockOut = async () => {
+    if (isOnLeave) {
+      setErrorMessage(`Attendance not allowed: You have an approved leave on this date (${leaveType}).`);
+      return;
+    }
     setErrorMessage(null);
     setSuccessMessage(null);
     setActionLoading(true);
@@ -261,7 +277,7 @@ export function GpsClockWidget({ onAttendanceUpdated, refreshTrigger }) {
   };
 
   const isClockedIn = Boolean(statusData?.is_clocked_in);
-  const currentStatus = statusData?.current_status || (isClockedIn ? "Working" : "Not Clocked In");
+  const currentStatus = isOnLeave ? "On Leave" : (statusData?.current_status || (isClockedIn ? "Working" : "Not Clocked In"));
   const office = statusData?.office;
   const shift = statusData?.today_shift;
 
@@ -311,7 +327,12 @@ export function GpsClockWidget({ onAttendanceUpdated, refreshTrigger }) {
                 Current Status
               </p>
               <div className="flex items-center space-x-2 mt-1">
-                {isClockedIn ? (
+                {isOnLeave ? (
+                  <Badge className="bg-amber-600 hover:bg-amber-700 text-white font-semibold px-3 py-1 text-xs shadow-sm flex items-center space-x-1.5">
+                    <CalendarOff className="h-3 w-3" />
+                    <span>On Leave ({leaveType})</span>
+                  </Badge>
+                ) : isClockedIn ? (
                   <Badge className="bg-emerald-600 text-white font-semibold px-3 py-1 text-xs shadow-sm animate-pulse flex items-center space-x-1.5">
                     <Radio className="h-3 w-3" />
                     <span>Working</span>
@@ -325,7 +346,7 @@ export function GpsClockWidget({ onAttendanceUpdated, refreshTrigger }) {
                     Not Clocked In
                   </Badge>
                 )}
-                {!isClockedIn && statusData?.auto_clocked_out && statusData?.clock_out_reason && (
+                {!isClockedIn && !isOnLeave && statusData?.auto_clocked_out && statusData?.clock_out_reason && (
                   <Badge variant="outline" className="border-amber-400 text-amber-800 dark:border-amber-600 dark:text-amber-300 font-semibold px-2 py-0.5 text-[11px] bg-amber-50 dark:bg-amber-950/40">
                     Auto: {statusData.clock_out_reason}
                   </Badge>
@@ -363,7 +384,17 @@ export function GpsClockWidget({ onAttendanceUpdated, refreshTrigger }) {
 
           {/* Col 3: GPS Actions */}
           <div className="flex flex-col justify-center space-y-3">
-            {isClockedIn ? (
+            {isOnLeave ? (
+              <div className="rounded-xl border border-amber-500/30 bg-amber-50/90 dark:bg-amber-950/40 p-4 text-center space-y-1.5 shadow-xs">
+                <div className="flex items-center justify-center space-x-1.5 text-amber-700 dark:text-amber-300 font-semibold text-xs">
+                  <CalendarOff className="h-4 w-4" />
+                  <span>Clock-In Not Allowed</span>
+                </div>
+                <p className="text-[11px] text-amber-700/90 dark:text-amber-400/90 leading-relaxed font-medium">
+                  You are on approved leave today ({leaveType}). Attendance clock-in and clock-out are disabled during active leave dates.
+                </p>
+              </div>
+            ) : isClockedIn ? (
               <Button
                 onClick={handleClockOut}
                 disabled={actionLoading}

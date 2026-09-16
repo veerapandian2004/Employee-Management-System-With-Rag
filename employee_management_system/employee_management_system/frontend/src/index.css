@@ -112,7 +112,11 @@ input:-webkit-autofill:active {
 html.dark input:-webkit-autofill,
 html.dark input:-webkit-autofill:hover,
 html.dark input:-webkit-autofill:focus,
-html.dark input:-webkit-autofill:active {
+html.dark input:-webkit-autofill:active,
+html[data-theme="dark"] input:-webkit-autofill,
+html[data-theme="dark"] input:-webkit-autofill:hover,
+html[data-theme="dark"] input:-webkit-autofill:focus,
+html[data-theme="dark"] input:-webkit-autofill:active {
   -webkit-box-shadow: 0 0 0 1000px #1e293b inset !important;
   -webkit-text-fill-color: #f8fafc !important;
   transition: background-color 5000s ease-in-out 0s;
@@ -122,7 +126,11 @@ html.dark input:-webkit-autofill:active {
 html.theme-blue input:-webkit-autofill,
 html.theme-blue input:-webkit-autofill:hover,
 html.theme-blue input:-webkit-autofill:focus,
-html.theme-blue input:-webkit-autofill:active {
+html.theme-blue input:-webkit-autofill:active,
+html[data-theme="blue"] input:-webkit-autofill,
+html[data-theme="blue"] input:-webkit-autofill:hover,
+html[data-theme="blue"] input:-webkit-autofill:focus,
+html[data-theme="blue"] input:-webkit-autofill:active {
   -webkit-box-shadow: 0 0 0 1000px #18274d inset !important;
   -webkit-text-fill-color: #f0f6ff !important;
   transition: background-color 5000s ease-in-out 0s;
