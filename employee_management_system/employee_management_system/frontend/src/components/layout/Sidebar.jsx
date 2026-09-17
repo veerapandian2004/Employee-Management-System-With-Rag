@@ -40,7 +40,6 @@ export function Sidebar({
   setActiveTab,
   counts = {},
   currentUser = {},
-  onLogout,
   mobileOpen = false,
   onCloseMobile,
 }) {
@@ -214,15 +213,7 @@ export function Sidebar({
             )}
           </div>
 
-          {/* {!collapsed && onLogout && (
-            <button
-              onClick={onLogout}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 dark:hover:text-rose-400 transition-colors cursor-pointer"
-              title="Sign Out"
-            >
-              <LogOut className="h-4 w-4" />
-            </button>
-          )} */}
+      
         </div>
       </div>
     </aside>

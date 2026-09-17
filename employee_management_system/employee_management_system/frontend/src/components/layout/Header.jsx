@@ -9,14 +9,12 @@ import {
   Menu,
   Bell,
   CheckCheck,
-  Check,
   Info,
   Trash2,
   X,
 } from "lucide-react";
 import { Input } from "../ui/input";
 import { Button } from "../ui/button";
-import { Badge } from "../ui/badge";
 import {
   apiFetchNotifications,
   apiMarkNotificationRead,
@@ -32,7 +30,6 @@ export function Header({
   currentUser = {},
   onLogout,
   onToggleMobileSidebar,
-  onNavigate,
 }) {
   const [theme, setTheme] = useState(() => {
     return localStorage.getItem("app_theme") || "light";
@@ -181,12 +178,7 @@ export function Header({
         <h1 className="text-base sm:text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100 theme-blue:text-blue-50 capitalize truncate">
           {activeTabName}
         </h1>
-        {/* <Badge
-          variant={role === "Administrator" ? "default" : role === "HR" ? "success" : "secondary"}
-          className="hidden sm:inline-flex text-[11px] font-medium shrink-0"
-        >
-          {role} View
-        </Badge> */}
+        
       </div>
 
       {/* Center Search & Actions */}

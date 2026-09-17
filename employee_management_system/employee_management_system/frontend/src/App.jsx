@@ -24,6 +24,7 @@ import {
   apiFetchDepartments,
   apiCreateDepartment,
   apiUpdateDepartment,
+  apiDeleteDepartment,
   apiFetchAttendance,
   apiCreateAttendance,
   apiUpdateAttendance,
