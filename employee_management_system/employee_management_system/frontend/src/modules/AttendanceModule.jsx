@@ -6,7 +6,6 @@ import {
   Edit,
   Trash2,
   RefreshCw,
-  Clock,
   LogIn,
   LogOut,
   AlertCircle,
@@ -34,6 +33,7 @@ import {
   apiFetchShiftTypes,
   apiClockIn,
   apiClockOut,
+  apiGetMyAttendanceStatus,
 } from "../services/apiService";
 import { GpsClockWidget } from "../components/GpsClockWidget";
 
@@ -58,6 +58,34 @@ export function AttendanceModule({
   const [isRecalculating, setIsRecalculating] = useState(false);
   const [widgetRefreshKey, setWidgetRefreshKey] = useState(0);
   const [actionMessage, setActionMessage] = useState(null);
+  const [userAttendanceStatus, setUserAttendanceStatus] = useState(null);
+
+  useEffect(() => {
+    async function loadUserStatus() {
+      if (userRole === "Administrator") return;
+      try {
+        const data = await apiGetMyAttendanceStatus();
+        setUserAttendanceStatus(data);
+      } catch (err) {
+        console.warn("Failed to fetch user attendance status:", err);
+      }
+    }
+    loadUserStatus();
+  }, [userRole, widgetRefreshKey]);
+
+  useEffect(() => {
+    const handleStatusSync = async () => {
+      if (userRole === "Administrator") return;
+      try {
+        const data = await apiGetMyAttendanceStatus();
+        setUserAttendanceStatus(data);
+      } catch (err) {
+        console.warn("Failed to sync attendance status:", err);
+      }
+    };
+    window.addEventListener("attendance-status-changed", handleStatusSync);
+    return () => window.removeEventListener("attendance-status-changed", handleStatusSync);
+  }, [userRole]);
 
   useEffect(() => {
     async function loadShifts() {
@@ -226,10 +254,19 @@ export function AttendanceModule({
     }
   }
 
+  const isClockedIn = Boolean(userAttendanceStatus?.is_clocked_in);
+  const isLeaveActive = Boolean(
+    isUserOnLeaveToday ||
+    userAttendanceStatus?.is_on_leave ||
+    userAttendanceStatus?.current_status === "On Leave" ||
+    (userAttendanceStatus?.clocking_allowed === false && userAttendanceStatus?.leave_type)
+  );
+  const activeLeaveType = userAttendanceStatus?.leave_type || userLeaveType || "Approved Leave";
+
   const handleClockIn = async () => {
-    if (isUserOnLeaveToday) {
+    if (isLeaveActive) {
       showNotification(
-        `Attendance not allowed: You have an approved leave on this date (${userLeaveType}).`,
+        `Attendance not allowed: You have an approved leave on this date (${activeLeaveType}).`,
         "error"
       );
       return;
@@ -266,9 +303,9 @@ export function AttendanceModule({
   };
 
   const handleClockOut = async () => {
-    if (isUserOnLeaveToday) {
+    if (isLeaveActive) {
       showNotification(
-        `Attendance not allowed: You have an approved leave on this date (${userLeaveType}).`,
+        `Attendance not allowed: You have an approved leave on this date (${activeLeaveType}).`,
         "error"
       );
       return;
@@ -340,16 +377,14 @@ export function AttendanceModule({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* Quick Clock IN / OUT (Employees & HR only) */}
+          {/* Quick Clock IN / OUT (Employees & HR only - single status-aware button) */}
           {userRole !== "Administrator" && (
-            <>
-              <Button
-                onClick={handleClockIn}
-                variant="outline"
-                className="border-emerald-600 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-500 dark:text-emerald-400 font-medium shadow-sm text-xs h-9 cursor-pointer"
-              >
-                <LogIn className="mr-1.5 h-3.5 w-3.5 text-emerald-600" /> Clock IN
-              </Button>
+            isLeaveActive ? (
+              <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border border-amber-500/40 bg-amber-50/90 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 text-xs font-semibold shadow-xs">
+                <CalendarOff className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                <span>On Leave Today ({activeLeaveType}) — Clock-in Disabled</span>
+              </div>
+            ) : isClockedIn ? (
               <Button
                 onClick={handleClockOut}
                 variant="outline"
@@ -357,30 +392,15 @@ export function AttendanceModule({
               >
                 <LogOut className="mr-1.5 h-3.5 w-3.5 text-amber-600" /> Clock OUT
               </Button>
-              {isUserOnLeaveToday ? (
-                <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border border-amber-500/40 bg-amber-50/90 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 text-xs font-semibold shadow-xs">
-                  <CalendarOff className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
-                  <span>On Leave Today ({userLeaveType}) — Clock-in Disabled</span>
-                </div>
-              ) : (
-                <>
-                  <Button
-                    onClick={handleClockIn}
-                    variant="outline"
-                    className="border-emerald-600 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-500 dark:text-emerald-400 font-medium shadow-sm text-xs h-9 cursor-pointer"
-                  >
-                    <LogIn className="mr-1.5 h-3.5 w-3.5 text-emerald-600" /> Clock IN
-                  </Button>
-                  <Button
-                    onClick={handleClockOut}
-                    variant="outline"
-                    className="border-amber-600 text-amber-700 hover:bg-amber-50 dark:border-amber-500 dark:text-amber-400 font-medium shadow-sm text-xs h-9 cursor-pointer"
-                  >
-                    <LogOut className="mr-1.5 h-3.5 w-3.5 text-amber-600" /> Clock OUT
-                  </Button>
-                </>
-              )}
-            </>
+            ) : (
+              <Button
+                onClick={handleClockIn}
+                variant="outline"
+                className="border-emerald-600 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-500 dark:text-emerald-400 font-medium shadow-sm text-xs h-9 cursor-pointer"
+              >
+                <LogIn className="mr-1.5 h-3.5 w-3.5 text-emerald-600" /> Clock IN
+              </Button>
+            )
           )}
 
           {/* Admin Recalculate */}
@@ -592,7 +612,7 @@ export function AttendanceModule({
                   <TableRow key={att.name || att.id || `att-${att.employee}-${att.attendance_date}-${idx}`}>
                     <TableCell>
                       <div className="font-semibold text-slate-900 dark:text-slate-100">
-                        {att.employee_name || att.employee}
+                        {att.employee_name || employees.find((e) => e.name === att.employee || e.naming_series === att.employee)?.full_name || att.employee}
                       </div>
                       <div className="text-xs text-slate-400 dark:text-slate-500 font-mono">
                         {att.employee}
@@ -630,7 +650,7 @@ export function AttendanceModule({
                       <div className="flex flex-wrap items-center gap-1">
                         <Badge
                           variant={
-                            att.status === "Present"
+                            (att.status === "Present" || (att.check_in && att.check_in !== "-" && (!att.status || att.status === "Working")))
                               ? "success"
                               : att.status === "Half Day"
                               ? "warning"
@@ -639,8 +659,13 @@ export function AttendanceModule({
                               : "secondary"
                           }
                         >
-                          {att.status}
+                          {att.status || (att.check_in && att.check_in !== "-" ? "Present" : "Not Marked")}
                         </Badge>
+                        {(!att.out_time || att.check_out === "-" || !att.check_out) && att.check_in && att.check_in !== "-" && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 animate-pulse">
+                            Clocked In
+                          </span>
+                        )}
                         {Boolean(att.auto_clocked_out) && (
                           <span
                             className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-indigo-100 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-900"

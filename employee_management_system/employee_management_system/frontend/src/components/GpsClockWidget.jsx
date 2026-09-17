@@ -318,7 +318,6 @@ export function GpsClockWidget({ onAttendanceUpdated, refreshTrigger }) {
               </p>
               <h4 className="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center space-x-2 mt-0.5">
                 <Clock className="h-4 w-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
-                <span>{shift ? `${shifth-4 w-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
                 <span>{shift ? `${shift.shift_name} (${shift.start_time} – ${shift.end_time})` : "Standard Day Shift (09:00 – 17:00)"}</span>
               </h4>
             </div>

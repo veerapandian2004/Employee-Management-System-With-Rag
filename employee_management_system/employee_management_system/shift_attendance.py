@@ -213,7 +213,14 @@ def get_checkin_logs_for_window(
 ) -> List[Dict[str, Any]]:
 	"""
 	Fetches all chronological Employee Checkin records for the employee within [window_start, window_end].
+	Also ensures checkins on the target calendar date are covered so late or evening checkins are included.
 	"""
+	att_date = window_start.date()
+	day_start = datetime.datetime.combine(att_date, datetime.time.min)
+	day_end = datetime.datetime.combine(window_end.date(), datetime.time.max)
+	q_start = min(window_start, day_start)
+	q_end = max(window_end, day_end)
+
 	logs = frappe.get_all(
 		"Employee Checkin",
 		fields=["name", "employee", "time", "log_type", "shift", "skip_auto_attendance"],
@@ -222,8 +229,8 @@ def get_checkin_logs_for_window(
 			"time": [
 				"between",
 				[
-					window_start.strftime("%Y-%m-%d %H:%M:%S"),
-					window_end.strftime("%Y-%m-%d %H:%M:%S"),
+					q_start.strftime("%Y-%m-%d %H:%M:%S"),
+					q_end.strftime("%Y-%m-%d %H:%M:%S"),
 				],
 			],
 			"skip_auto_attendance": 0,
@@ -467,7 +474,7 @@ def determine_attendance_status(
 	present_thresh = flt(shift_type_doc.get("working_hours_threshold_for_present") or 8.0)
 
 	if working_hours < half_day_thresh:
-		return "Absent"
+		return "Half Day" if has_valid_checkin else "Absent"
 	elif working_hours < present_thresh:
 		return "Half Day"
 	else:

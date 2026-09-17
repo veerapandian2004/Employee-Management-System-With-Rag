@@ -51,76 +51,70 @@ export function DashboardModule({
   const utcToday = now.toISOString().split("T")[0];
   const candidateTodayDates = new Set([localToday, utcToday]);
 
-  // Set of employee identifiers who are currently on leave
-  const onLeaveEmpSet = new Set();
+  // Set of employee identifiers who are on approved leave TODAY
+  const todayOnLeaveEmpSet = new Set();
 
-  // 1. Direct employee status from backend
-  employees.forEach((emp) => {
-    if (emp.status === "On Leave" || emp.is_on_leave) {
-      if (emp.name) onLeaveEmpSet.add(emp.name);
-      if (emp.naming_series) onLeaveEmpSet.add(emp.naming_series);
-      if (emp.full_name) onLeaveEmpSet.add(emp.full_name);
-    }
-  });
-
-  // 2. Approved leave applications active today (from_date <= today <= to_date)
+  // 1. Approved leave applications active today (from_date <= today <= to_date)
   leaveApplications.forEach((l) => {
     const isApproved = String(l.status || "").toLowerCase() === "approved";
     if (isApproved && l.from_date && l.to_date) {
+      const fromStr = String(l.from_date).slice(0, 10);
+      const toStr = String(l.to_date).slice(0, 10);
       const coversToday = Array.from(candidateTodayDates).some(
-        (td) => l.from_date <= td && l.to_date >= td
+        (td) => fromStr <= td && toStr >= td
       );
       if (coversToday) {
-        if (l.employee) onLeaveEmpSet.add(l.employee);
-        if (l.employee_name) onLeaveEmpSet.add(l.employee_name);
+        if (l.employee) todayOnLeaveEmpSet.add(String(l.employee).trim().toLowerCase());
+        if (l.employee_name) todayOnLeaveEmpSet.add(String(l.employee_name).trim().toLowerCase());
+        if (l.employee_email) todayOnLeaveEmpSet.add(String(l.employee_email).trim().toLowerCase());
       }
     }
   });
 
-  // 3. Today's attendance records marked "On Leave"
+  // 2. Today's attendance records marked "On Leave"
   attendance.forEach((a) => {
-    if (a.status === "On Leave") {
-      const isToday = !a.attendance_date || candidateTodayDates.has(a.attendance_date);
-      if (isToday) {
-        if (a.employee) onLeaveEmpSet.add(a.employee);
-        if (a.employee_name) onLeaveEmpSet.add(a.employee_name);
+    if (a.status === "On Leave" && a.attendance_date) {
+      const attDate = String(a.attendance_date).slice(0, 10);
+      if (candidateTodayDates.has(attDate)) {
+        if (a.employee) todayOnLeaveEmpSet.add(String(a.employee).trim().toLowerCase());
+        if (a.employee_name) todayOnLeaveEmpSet.add(String(a.employee_name).trim().toLowerCase());
       }
     }
   });
 
-  // 4. Fallback: If no date overlap matched today, check any approved leave application active in current month/window
-  if (onLeaveEmpSet.size === 0) {
-    const currentMonthPrefix = localToday.slice(0, 7);
-    leaveApplications.forEach((l) => {
-      const isApproved = String(l.status || "").toLowerCase() === "approved";
-      if (isApproved && l.from_date && (l.from_date.startsWith(currentMonthPrefix) || (l.to_date && l.to_date >= localToday))) {
-        if (l.employee) onLeaveEmpSet.add(l.employee);
-        if (l.employee_name) onLeaveEmpSet.add(l.employee_name);
-      }
-    });
-    if (onLeaveEmpSet.size === 0) {
-      attendance.forEach((a) => {
-        if (a.status === "On Leave" && a.attendance_date && a.attendance_date.startsWith(currentMonthPrefix)) {
-          if (a.employee) onLeaveEmpSet.add(a.employee);
-          if (a.employee_name) onLeaveEmpSet.add(a.employee_name);
-        }
-      });
+  // 3. Employee records verified on leave today from backend (api.py calculates is_on_leave for today)
+  employees.forEach((emp) => {
+    if (emp.is_on_leave) {
+      if (emp.name) todayOnLeaveEmpSet.add(String(emp.name).trim().toLowerCase());
+      if (emp.naming_series) todayOnLeaveEmpSet.add(String(emp.naming_series).trim().toLowerCase());
+      if (emp.full_name) todayOnLeaveEmpSet.add(String(emp.full_name).trim().toLowerCase());
+      if (emp.employee_name) todayOnLeaveEmpSet.add(String(emp.employee_name).trim().toLowerCase());
+      if (emp.email) todayOnLeaveEmpSet.add(String(emp.email).trim().toLowerCase());
     }
-  }
+  });
 
-  // Count unique employees matching the on-leave set
-  const onLeaveEmpCount = employees.filter(
-    (emp) =>
-      onLeaveEmpSet.has(emp.name) ||
-      onLeaveEmpSet.has(emp.naming_series) ||
-      onLeaveEmpSet.has(emp.full_name) ||
-      emp.status === "On Leave" ||
-      emp.is_on_leave
-  ).length || (onLeaveEmpSet.size > 0 ? onLeaveEmpSet.size : 0);
+  // Count unique employees on leave today
+  const onLeaveEmpCount = employees.filter((emp) => {
+    const name = emp.name ? String(emp.name).trim().toLowerCase() : "";
+    const series = emp.naming_series ? String(emp.naming_series).trim().toLowerCase() : "";
+    const fullName = emp.full_name ? String(emp.full_name).trim().toLowerCase() : "";
+    const empName = emp.employee_name ? String(emp.employee_name).trim().toLowerCase() : "";
+    const email = emp.email ? String(emp.email).trim().toLowerCase() : "";
 
-  // Active employees on duty (non-inactive employees who are not currently on leave)
+    return (
+      (name && todayOnLeaveEmpSet.has(name)) ||
+      (series && todayOnLeaveEmpSet.has(series)) ||
+      (fullName && todayOnLeaveEmpSet.has(fullName)) ||
+      (empName && todayOnLeaveEmpSet.has(empName)) ||
+      (email && todayOnLeaveEmpSet.has(email))
+    );
+  }).length;
+
+  // Active employees on duty today (non-inactive employees who are not on leave today)
   const totalStaffCount = employees.length;
-  const nonInactiveCount = employees.filter((e) => e.status !== "Inactive").length || totalStaffCount;
+  const nonInactiveCount = employees.filter(
+    (e) => String(e.status || "").toLowerCase() !== "inactive"
+  ).length || totalStaffCount;
   const activeEmpCount = Math.max(0, nonInactiveCount - onLeaveEmpCount);
 
   const pendingLeaves = leaveApplications.filter((l) => l.status === "Pending");
@@ -620,9 +614,9 @@ export function DashboardModule({
                         ? "text-amber-600 dark:text-amber-400 hover:underline cursor-pointer"
                         : "text-slate-500 dark:text-slate-400"
                     }`}
-                    title={onLeaveEmpCount > 0 ? "Click to view leave records" : "No staff currently on leave"}
+                    title={onLeaveEmpCount > 0 ? `${onLeaveEmpCount} staff on leave today (click to view)` : "No staff on leave today"}
                   >
-                    {onLeaveEmpCount} On Leave
+                    {onLeaveEmpCount} On Leave Today
                   </span>
                 </div>
               </div>

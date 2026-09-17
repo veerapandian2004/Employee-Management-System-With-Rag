@@ -572,12 +572,11 @@ def get_employees():
 		if "full_name" not in r or not r.get("full_name"):
 			r["full_name"] = r.get("name")
 
-		is_on_leave = (
+		is_on_leave = bool(
 			(r.get("name") and str(r["name"]).strip() in on_leave_identifiers)
 			or (r.get("naming_series") and str(r["naming_series"]).strip() in on_leave_identifiers)
 			or (r.get("full_name") and str(r["full_name"]).strip() in on_leave_identifiers)
 			or (r.get("email") and str(r["email"]).strip() in on_leave_identifiers)
-			or r.get("status") == "On Leave"
 		)
 
 		if is_on_leave:
@@ -588,14 +587,16 @@ def get_employees():
 				if curr_db_status != "On Leave":
 					try:
 						frappe.db.set_value("Employee", r.get("name"), "status", "On Leave", update_modified=False)
+						frappe.db.commit()
 					except Exception:
 						pass
 		else:
+			r["is_on_leave"] = False
 			if r.get("status") == "On Leave":
 				r["status"] = "Active"
-				r["is_on_leave"] = False
 				try:
 					frappe.db.set_value("Employee", r.get("name"), "status", "Active", update_modified=False)
+					frappe.db.commit()
 				except Exception:
 					pass
 
@@ -2310,37 +2311,72 @@ def get_attendance(employee=None, from_date=None, to_date=None):
 	elif to_date:
 		filters["attendance_date"] = ["<=", to_date]
 
+	# Auto-sync today's attendance for employees who checked in today
+	today_d = nowdate()
+	if not from_date or (getdate(from_date) <= getdate(today_d) <= getdate(to_date or today_d)):
+		try:
+			today_checkins = frappe.get_all(
+				"Employee Checkin",
+				filters={"time": [">=", f"{today_d} 00:00:00"]},
+				fields=["employee", "shift"],
+				group_by="employee",
+			)
+			from employee_management_system.employee_management_system.shift_attendance import (
+				process_attendance_for_employee_shift,
+				resolve_employee_shift_type,
+			)
+			for chk in today_checkins:
+				emp_id = chk.get("employee")
+				if emp_id and not frappe.db.exists("Attendance", {"employee": emp_id, "attendance_date": today_d}):
+					sh = chk.get("shift") or resolve_employee_shift_type(emp_id, today_d)
+					if sh:
+						try:
+							process_attendance_for_employee_shift(emp_id, sh, today_d)
+							frappe.db.commit()
+						except Exception:
+							pass
+		except Exception:
+			pass
+
 	try:
+		candidate_fields = [
+			"name",
+			"employee",
+			"employee_name",
+			"attendance_date",
+			"status",
+			"shift",
+			"office_location",
+			"in_time",
+			"out_time",
+			"working_hours",
+			"late_entry",
+			"early_exit",
+			"auto_clocked_out",
+			"clock_out_reason",
+			"auto_clock_out_time",
+			"leave_type",
+			"leave_application",
+			"remarks",
+			"creation",
+			"modified",
+		]
+		valid_fields = [
+			f for f in candidate_fields
+			if f in ("name", "creation", "modified") or frappe.db.has_column("Attendance", f)
+		]
+
 		records = frappe.get_all(
 			"Attendance",
-			fields=[
-				"name",
-				"employee",
-				"employee_name",
-				"attendance_date",
-				"status",
-				"shift",
-				"office_location",
-				"in_time",
-				"out_time",
-				"working_hours",
-				"late_entry",
-				"early_exit",
-				"auto_clocked_out",
-				"clock_out_reason",
-				"auto_clock_out_time",
-				"leave_type",
-				"leave_application",
-				"remarks",
-				"creation",
-				"modified",
-			],
+			fields=valid_fields,
 			filters=filters,
 			order_by="attendance_date desc, modified desc",
 		)
-		# Enrich records with formatted check_in / check_out strings for UI
+		# Enrich records with formatted check_in / check_out strings and employee_name for UI
 		from frappe.utils import get_datetime
 		for r in records:
+			if not r.get("employee_name") and r.get("employee"):
+				r["employee_name"] = frappe.db.get_value("Employee", r["employee"], "full_name") or r["employee"]
 			if r.get("in_time"):
 				t_in = get_datetime(r["in_time"])
 				r["check_in"] = t_in.strftime("%I:%M %p")
@@ -2352,7 +2388,8 @@ def get_attendance(employee=None, from_date=None, to_date=None):
 			else:
 				r["check_out"] = "-"
 		return records
-	except Exception:
+	except Exception as e:
+		frappe.logger().error(f"Error in get_attendance: {e}")
 		return []
 
 
