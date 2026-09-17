@@ -45,7 +45,7 @@ flowchart TD
 
 | Sidebar Item | Underlying DocType | Description & Capabilities |
 | :--- | :--- | :--- |
-| 📊 **Dashboard** | N/A | **Admin/HR View**: Enterprise staff headcount, pending leave approval cards, monthly payroll outflow, department statistics, and quick actions (+ Add Employee, + Apply for Leave, Review Leaves).<br>**Employee View**: Personal attendance status & check-in punch, available leave balances, latest net salary summary, recent personal leave requests, and quick Apply Leave modal. |
+| 📊 **Dashboard** | N/A | **Admin/HR View**: Enterprise staff headcount with today's active and on-leave metrics (`X Active • Y On Leave Today`), pending leave approval cards, monthly payroll outflow, department statistics, and quick actions (+ Add Employee, + Apply for Leave, Review Leaves).<br>**Employee View**: Personal attendance status & check-in punch, available leave balances, latest net salary summary, recent personal leave requests, and quick Apply Leave modal. |
 | 👥 **Employees** | `Employee` | Complete directory for Admin/HR with search, status/department filters, grid/list toggles, and add/edit modals. Scoped to personal profile view for Employee users. |
 | 🏢 **Departments** | `Department` | Department master with duplicate prevention, parent-department hierarchy trees, cost centers, and department head assignments. |
 | 🕒 **Attendance** | `Attendance`<br>`Employee Checkin` | Daily staff attendance records, GPS clock-in/out geofencing, auto-attendance calculation with strict status priority rules. |
@@ -101,6 +101,24 @@ flowchart TD
 - **Default Shift Fallback**: Automatically resolves company standard `Day Shift` (09:00 - 17:00) when an employee lacks an explicit `Shift Assignment`, preventing unassigned employees from getting stuck in an indefinite "Working" state.
 - **Dual-Trigger Execution**: Synchronized via Frappe Scheduler periodic background jobs (`process_shift_completion_job`) and real-time frontend pulse endpoints (`ping_location`, `get_my_attendance_status`).
 - **Overtime & Multi-Day Punch Handling**: Evaluates punches against punch start date and closes sessions extending beyond max working hours.
+
+### 7. Dashboard Real-Time Today's On-Leave & Active Workforce Metrics
+- **Strict Today Filter**: The Total Staff KPI card dynamically calculates workforce presence for **today** rather than aggregating historical or month-wide leaves.
+- **Dynamic Status Resolution & Database Self-Healing**: In `get_employees` (`api.py`), an employee is marked `is_on_leave = True` strictly if they have an approved leave application active today (`from_date <= today <= to_date`) or an attendance record for today marked `On Leave`. If an employee's status in `tabEmployee` was stuck in `On Leave` from past leaves, the backend automatically self-heals and commits `status = 'Active'`.
+- **Accurate Presentation**: Subtitle displays `{activeEmpCount} Active • {onLeaveEmpCount} On Leave Today` with interactive tooltip and navigation shortcut to leave applications.
+
+### 8. Streamlined Status-Aware Attendance Action Controls
+- **Single Action Button**: The Attendance Module header controls for HR Managers and Employees render a single, status-aware button or badge, eliminating redundant and duplicate Clock IN / Clock OUT buttons.
+- **Real-Time State Synchronization**: Synchronized with `apiGetMyAttendanceStatus` and cross-component `attendance-status-changed` events.
+- **State Behavior**:
+  - **Working**: Displays only `Clock OUT`.
+  - **Not Clocked In**: Displays only `Clock IN`.
+  - **On Approved Leave**: Displays `On Leave Today ({leaveType}) — Clock-in Disabled`.
+
+### 9. 30-Minute Late Entry Grace Period Standard
+- **Enterprise 30-Minute Rule**: For every employee execution, clocking in within 30 minutes after shift start time (`first_in <= shift_start + 30 minutes`) is strictly **NOT late entry** (`late_entry = 0`). Only clock-ins occurring more than 30 minutes after shift start are flagged as `late_entry = 1`.
+- **Database Self-Healing & Reconciliation**: All Shift Types in `tabShift Type` default to at least 30 minutes for `late_entry_grace_period`. Pre-existing attendance records where clock-in occurred within 30 minutes of shift start are automatically reconciled (`late_entry = 0`).
+- **Frontend & API Alignment**: Shift creation forms, default payloads, and calculation engines default to 30 minutes.
 
 ---
 

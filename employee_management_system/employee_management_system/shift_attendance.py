@@ -319,6 +319,35 @@ def calculate_working_hours_from_checkins(
 	}
 
 
+def ensure_shift_type_grace_periods():
+	"""
+	Ensures all Shift Types have a late_entry_grace_period of at least 30 minutes,
+	and reconciles any existing Attendance records where clock-in occurred within 30 minutes of shift start.
+	"""
+	try:
+		if frappe.db.exists("DocType", "Shift Type"):
+			frappe.db.sql("""
+				UPDATE `tabShift Type`
+				SET late_entry_grace_period = 30
+				WHERE late_entry_grace_period < 30 OR late_entry_grace_period IS NULL
+			""")
+			frappe.db.commit()
+
+		if frappe.db.exists("DocType", "Attendance") and frappe.db.exists("DocType", "Shift Type"):
+			frappe.db.sql("""
+				UPDATE `tabAttendance` a
+				INNER JOIN `tabShift Type` s ON (a.shift = s.name OR a.shift = s.shift_name)
+				SET a.late_entry = 0,
+				    a.remarks = REPLACE(a.remarks, ' | Late Entry', '')
+				WHERE a.late_entry = 1
+				  AND a.in_time IS NOT NULL
+				  AND TIMESTAMPDIFF(MINUTE, CONCAT(a.attendance_date, ' ', s.start_time), a.in_time) <= 30
+			""")
+			frappe.db.commit()
+	except Exception:
+		pass
+
+
 def evaluate_grace_periods(
 	shift_type_doc: Any,
 	shift_start: datetime.datetime,
@@ -328,14 +357,17 @@ def evaluate_grace_periods(
 ) -> Tuple[int, int]:
 	"""
 	Evaluates Late Entry and Early Exit flags against shift grace periods:
-	- late_entry: 1 if first_in > shift_start + late_entry_grace_period minutes
+	- late_entry: 1 if first_in > shift_start + late_entry_grace_period minutes (default: 30 minutes).
+	  Clocking in up to 30 minutes after shift start is NOT marked as late entry.
 	- early_exit: 1 if last_out < shift_end - early_exit_grace_period minutes
 	"""
 	late_entry = 0
 	early_exit = 0
 
-	late_grace = cint(shift_type_doc.get("late_entry_grace_period") or 15)
-	early_grace = cint(shift_type_doc.get("early_exit_grace_period") or 15)
+	raw_grace = cint(shift_type_doc.get("late_entry_grace_period")) if shift_type_doc else 0
+	# Standard: Clocking in within 30 minutes after shift start is NOT late entry
+	late_grace = max(30, raw_grace) if raw_grace else 30
+	early_grace = cint(shift_type_doc.get("early_exit_grace_period") or 15) if shift_type_doc else 15
 
 	if first_in:
 		late_cutoff = shift_start + datetime.timedelta(minutes=late_grace)
@@ -761,6 +793,7 @@ def process_auto_attendance_for_date(
 	Calculates automatic attendance for all active shift assignments on target_date.
 	Default target_date is today.
 	"""
+	ensure_shift_type_grace_periods()
 	d = getdate(target_date) if target_date else getdate(nowdate())
 	assignments = get_active_shift_assignments(
 		target_date=d,

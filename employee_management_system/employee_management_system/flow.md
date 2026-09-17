@@ -208,7 +208,7 @@ graph TD
     AdminAuth --> AdminNav["Sidebar Navigation: 9 Modules"]
 
     subgraph AdminModules["Permitted Admin Modules & Capabilities"]
-        M1["Dashboard: Enterprise KPIs, Global Outflow, Quick Actions"]
+        M1["Dashboard: Live Staff Headcount (Today's Active & On-Leave), Global Outflow, Quick Actions"]
         M2["Employees: Create, Read, Update, DELETE (Admin Exclusive)"]
         M3["Departments: Create, Read, Update, DELETE (Admin Exclusive, Guarded)"]
         M4["Attendance: View All Attendance, Record / Modify Logs"]
@@ -241,7 +241,7 @@ graph TD
     HRAuth --> HRNav["Sidebar Navigation: 9 Modules"]
 
     subgraph HRModules["Permitted HR Modules & Capabilities"]
-        H1["Dashboard: Operational KPIs, Pending Approvals, Add Employee"]
+        H1["Dashboard: Operational KPIs (Today's Active & On-Leave), Pending Approvals, Add Employee"]
         H2["Employees: Create, Read, Update (DELETE BLOCKED - 403)"]
         H3["Departments: Create, Read, Update (DELETE BLOCKED - 403)"]
         H4["Attendance: View All Records, Log Daily Attendance"]
@@ -347,6 +347,21 @@ main.jsx (createRoot)
    - Role guard verification redirects unpermitted module routes (e.g. Employee visiting `#payroll`) back to `#dashboard`.
 7. **Floating Border-Edge Sidebar Toggle**:
    - The collapse button is implemented as a floating, border-edge pill placed between the navigation links and the employee profile card, keeping the sidebar layout clean and uncluttered.
+
+### 7.3 Dashboard Real-Time Workforce & Leave Headcount Flow
+The Total Staff KPI card in `DashboardModule.jsx` dynamically calculates active and on-leave workforce metrics for **today**:
+1. **Today's Date Normalization**: Compares dates using both local (`YYYY-MM-DD`) and UTC candidate date strings to avoid timezone drift across midnight boundaries.
+2. **Strict Today Active Leave Filter**:
+   - Evaluates approved leave applications where today falls within the range: `from_date <= today && to_date >= today`.
+   - Evaluates daily attendance records where `attendance_date == today` and `status == "On Leave"`.
+   - Evaluates employees flagged `is_on_leave == True` by the backend.
+3. **Elimination of Month-Wide Fallback**: Unlike legacy implementations that fell back to aggregating all leaves from the current month when today's count was zero, the system strictly reports `0 On Leave Today` when no employees are actively on leave today.
+4. **Backend Database Self-Healing**: In `get_employees` (`api.py`), any employee record that retained `status = "On Leave"` in MariaDB from past leaves is automatically updated to `"Active"` and committed to `tabEmployee`.
+5. **Dynamic Metric Output**:
+   - `totalStaffCount = employees.length`
+   - `onLeaveEmpCount = count(unique staff matching today's on-leave set)`
+   - `activeEmpCount = max(0, nonInactiveCount - onLeaveEmpCount)`
+   - Card displays: `{activeEmpCount} Active • {onLeaveEmpCount} On Leave Today`.
 
 ---
 
@@ -714,11 +729,17 @@ flowchart TD
      - Zero valid checkins on a normal working day $\rightarrow \text{Absent}$.
    - **Status Priority Guard**: When `upsert_attendance_record` runs, an existing record with higher priority is never overwritten or downgraded by a lower priority status during subsequent auto-attendance passes.
 
-5. **Duplicate Prevention & Idempotency**:
+5. **Late Entry Grace Period Standard (30 Minutes)**:
+   - For every employee execution, clocking in up to **30 minutes** after shift start time (`first_in <= shift_start + 30 minutes`) is strictly **NOT late entry** (`late_entry = 0`).
+   - Only clock-ins occurring strictly more than 30 minutes after shift start are flagged as `late_entry = 1`.
+   - Engine enforces `late_grace = max(30, raw_grace) if raw_grace else 30`, preventing any employee from being marked late within 30 minutes even if a shift was misconfigured.
+   - Database self-healing (`ensure_shift_type_grace_periods()`) automatically upgrades all `Shift Type` records with `late_entry_grace_period < 30` to 30 minutes and reconciles historical attendance rows where arrival was within 30 minutes.
+
+6. **Duplicate Prevention & Idempotency**:
    - Strict unique constraint on `(employee, attendance_date)`.
    - The engine updates existing records in-place without duplicating database rows.
 
-6. **Whitelisted APIs & React Integration**:
+7. **Whitelisted APIs & React Integration**:
    - `employee_checkin`, `employee_checkout`: GPS/biometric clocking endpoints.
    - `recalculate_attendance(attendance_date, shift_type, employee)`: Admin/HR recalculation trigger.
    - `get_attendance(employee, from_date, to_date)`: Role-scoped attendance query.
@@ -763,6 +784,7 @@ flowchart TD
 3. **Accuracy Rejection**: If GPS accuracy reading exceeds `max_accuracy` (default 50m), the request is rejected immediately before evaluating distance.
 4. **Perimeter Enforcement**: If distance exceeds `allowed_radius` (default 150m), request is rejected with exact distance feedback.
 5. **Sequence Enforcement**: Prevents duplicate clock-ins (`IN -> IN`) or clock-outs without active sessions (`OUT -> OUT` or `OUT` without `IN`).
+6. **Streamlined Status-Aware Single-Button UI**: Header controls in `AttendanceModule.jsx` render exactly one contextual action: only `Clock OUT` when working, only `Clock IN` when not clocked in, or an `On Leave Today` notice when on approved leave. Redundant duplicate buttons are removed, and state transitions broadcast `attendance-status-changed` events across components.
 
 ### 15.2 Automated Clock-Out & Shift Completion Engine
 

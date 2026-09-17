@@ -193,7 +193,7 @@ Use these exact table definitions, row semantics, column descriptions, and relat
      * `shift_name` (VARCHAR): Shift name (e.g. 'Day Shift', 'Night Shift').
      * `start_time` (TIME): Shift begin time (e.g. '09:00:00' or '22:00:00').
      * `end_time` (TIME): Shift end time (e.g. '17:00:00' or '06:00:00').
-     * `late_entry_grace_period` (INT): Grace period in minutes for late arrival (e.g. 15).
+     * `late_entry_grace_period` (INT): Grace period in minutes for late arrival (e.g. 30). Clock-in within 30 mins is not late entry.
      * `working_hours_threshold_for_half_day` (DECIMAL): Minimum hours for Half Day (e.g. 4.0).
      * `working_hours_threshold_for_present` (DECIMAL): Minimum hours for Full Day Present (e.g. 8.0).
 
@@ -359,7 +359,7 @@ SCHEMA_METADATA = {
 			"shift_name": {"type": "VARCHAR(140)", "description": "Shift name (e.g. 'Day Shift', 'Night Shift')."},
 			"start_time": {"type": "TIME", "description": "Shift begin time (e.g. '09:00:00' or '22:00:00')."},
 			"end_time": {"type": "TIME", "description": "Shift end time (e.g. '17:00:00' or '06:00:00')."},
-			"late_entry_grace_period": {"type": "INT", "description": "Grace period in minutes before marking late entry (e.g. 15)."},
+			"late_entry_grace_period": {"type": "INT", "description": "Grace period in minutes before marking late entry (standard: 30 minutes)."},
 			"working_hours_threshold_for_half_day": {"type": "DECIMAL(5,2)", "description": "Minimum hours required for Half Day status (e.g. 4.0)."},
 			"working_hours_threshold_for_present": {"type": "DECIMAL(5,2)", "description": "Minimum hours required for Full Day Present status (e.g. 8.0)."},
 		},

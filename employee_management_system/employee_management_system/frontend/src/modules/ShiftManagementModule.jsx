@@ -58,7 +58,7 @@ export function ShiftManagementModule({ employees = [], userRole = "Administrato
     shift_name: "",
     start_time: "09:00:00",
     end_time: "18:00:00",
-    grace_period_minutes: 15,
+    grace_period_minutes: 30,
     half_day_threshold_hours: 4.0,
     weekly_off_days: ["Saturday", "Sunday"],
     enable_auto_attendance: 1,
@@ -116,7 +116,7 @@ export function ShiftManagementModule({ employees = [], userRole = "Administrato
         shift_name: st.shift_name || st.name,
         start_time: st.start_time || "09:00:00",
         end_time: st.end_time || "18:00:00",
-        grace_period_minutes: st.grace_period_minutes ?? 15,
+        grace_period_minutes: st.late_entry_grace_period ?? st.grace_period_minutes ?? 30,
         half_day_threshold_hours: st.half_day_threshold_hours ?? 4.0,
         weekly_off_days: daysArr,
         enable_auto_attendance: st.enable_auto_attendance ? 1 : 0,
@@ -128,7 +128,7 @@ export function ShiftManagementModule({ employees = [], userRole = "Administrato
         shift_name: "",
         start_time: "09:00:00",
         end_time: "18:00:00",
-        grace_period_minutes: 15,
+        grace_period_minutes: 30,
         half_day_threshold_hours: 4.0,
         weekly_off_days: ["Saturday", "Sunday"],
         enable_auto_attendance: 1,
@@ -144,6 +144,7 @@ export function ShiftManagementModule({ employees = [], userRole = "Administrato
 
     const payload = {
       ...typeForm,
+      late_entry_grace_period: typeForm.grace_period_minutes,
       weekly_off_days: typeForm.weekly_off_days.join(", "),
     };
 
@@ -409,7 +410,7 @@ export function ShiftManagementModule({ employees = [], userRole = "Administrato
                       <td className="px-4 py-3">
                         {st.start_time} - {st.end_time}
                       </td>
-                      <td className="px-4 py-3">{st.grace_period_minutes || 0} mins</td>
+                      <td className="px-4 py-3">{st.late_entry_grace_period || st.grace_period_minutes || 30} mins</td>
                       <td className="px-4 py-3">{st.half_day_threshold_hours || 0} hrs</td>
                       <td className="px-4 py-3 max-w-[200px] truncate" title={st.weekly_off_days}>
                         <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
@@ -652,7 +653,7 @@ export function ShiftManagementModule({ employees = [], userRole = "Administrato
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-medium text-slate-700 dark:text-slate-300 block mb-1">
-                  Grace Period (Minutes)
+                  Late Entry Grace Period (Minutes)
                 </label>
                 <Input
                   type="number"

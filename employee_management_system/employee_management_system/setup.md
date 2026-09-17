@@ -5,8 +5,8 @@ This guide provides instructions for setting up the **Employee Management System
 The system consists of:
 - **Backend**: Frappe Framework v15+ (Python 3.10/3.11, MariaDB 10.6+, Redis)
 - **Frontend**: React 19 SPA (Vite 8, Tailwind CSS, Lucide Icons, shadcn/ui)
-- **Attendance & Shifts**: Master Shift Types, Weekly Offs, Shift Assignments, GPS Geofencing, Company Holiday Calendar, and Strict Status Priority Auto-Attendance.
-- **Leave & Payroll Workflows**: Real-time Balance Checking, Immediate Attendance Synchronization, Leave Cancellation Reversion, Loss of Pay (LOP) Automation, Idempotent Batch Payroll, PDF Paystubs, and Email Tracking.
+- **Attendance & Shifts**: Master Shift Types, Weekly Offs, Shift Assignments, GPS Geofencing, Company Holiday Calendar, Status-Aware Single-Action Clock IN/OUT Controls, 30-Minute Late Entry Grace Period Standard, and Strict Status Priority Auto-Attendance.
+- **Leave & Payroll Workflows**: Real-time Balance Checking, Immediate Attendance Synchronization, Leave Cancellation Reversion, Today's Active Leave & Workforce Headcount Synchronization, Loss of Pay (LOP) Automation, Idempotent Batch Payroll, PDF Paystubs, and Email Tracking.
 - **AI & Intelligent Services**: AST SQL Guard (sqlglot), Intent Router, Qdrant Vector Engine in Docker (384-dim semantic embeddings with offline NumPy fallback), and Persistent Chat Session Management.
 
 ---
@@ -44,6 +44,8 @@ The system consists of:
                       │          http://localhost:5173         │
                       │  • Shifts CRUD & Company Holidays UI   │
                       │  • Real-time Leave Balance & Cancel    │
+                      │  • Today's Leave & Active Staff Sync   │
+                      │  • Status-Aware Attendance Controls    │
                       │  • Batch Payroll Runs & PDF/Email      │
                       │  • In-App Notification Bell & Badge    │
                       │  • Persistent AI Chat Session History  │

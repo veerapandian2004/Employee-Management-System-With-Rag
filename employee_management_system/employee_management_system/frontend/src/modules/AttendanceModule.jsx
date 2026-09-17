@@ -357,6 +357,7 @@ export function AttendanceModule({
     (a) => a.status === "Late" || a.late_entry === 1 || a.late_entry === true
   ).length;
   const absentCount = attendance.filter((a) => a.status === "Absent").length;
+
   const leaveCount = attendance.filter((a) => a.status === "On Leave").length;
   const halfDayCount = attendance.filter((a) => a.status === "Half Day").length;
 

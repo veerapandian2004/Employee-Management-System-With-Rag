@@ -2746,10 +2746,12 @@ def recalculate_attendance(attendance_date=None, shift_type=None, employee=None)
 		check_shift_completion_auto_clock_out,
 	)
 	from employee_management_system.employee_management_system.shift_attendance import (
+		ensure_shift_type_grace_periods,
 		process_auto_attendance_for_date,
 	)
 
 	target = attendance_date or nowdate()
+	ensure_shift_type_grace_periods()
 	try:
 		check_shift_completion_auto_clock_out(target_date=target, employee_id=employee)
 	except Exception as e:
@@ -2773,6 +2775,11 @@ def get_shift_types():
 	_check_authenticated()
 	if not frappe.db.exists("DocType", "Shift Type"):
 		return []
+	try:
+		from employee_management_system.employee_management_system.shift_attendance import ensure_shift_type_grace_periods
+		ensure_shift_type_grace_periods()
+	except Exception:
+		pass
 	return frappe.get_all("Shift Type", fields=["*"], order_by="shift_name asc")
 
 
@@ -2807,6 +2814,11 @@ def create_shift_type(data):
 	if not data.get("shift_name"):
 		frappe.throw(_("Shift Name is required"))
 
+	if not data.get("late_entry_grace_period") and data.get("grace_period_minutes"):
+		data["late_entry_grace_period"] = data["grace_period_minutes"]
+	if not data.get("late_entry_grace_period") or int(data.get("late_entry_grace_period", 0)) < 30:
+		data["late_entry_grace_period"] = max(30, int(data.get("late_entry_grace_period") or 30))
+
 	doc = frappe.get_doc({"doctype": "Shift Type", **data})
 	doc.insert(ignore_permissions=True)
 	frappe.db.commit()
@@ -2819,6 +2831,9 @@ def update_shift_type(name, data):
 	_check_admin_or_hr()
 	if isinstance(data, str):
 		data = frappe.parse_json(data)
+
+	if not data.get("late_entry_grace_period") and data.get("grace_period_minutes"):
+		data["late_entry_grace_period"] = data["grace_period_minutes"]
 
 	doc = frappe.get_doc("Shift Type", name)
 	doc.update(data)

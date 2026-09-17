@@ -24,7 +24,7 @@ frontend/src/
 │       └── table.jsx              # Responsive data table primitives
 ├── modules/
 │   ├── LoginModule.jsx            # Authentication screen with demo role quick-switchers
-│   ├── DashboardModule.jsx        # Dual-mode dashboard (Executive view for Admin/HR; Personal portal for Employee)
+│   ├── DashboardModule.jsx        # Dual-mode dashboard (Executive view with today's active & on-leave staff metrics; Employee portal)
 │   ├── EmployeeModule.jsx         # Directory view (Admin/HR) and Profile view (Employee)
 │   ├── DepartmentModule.jsx       # Department hierarchy & cost center manager
 │   ├── LeaveApplicationModule.jsx # Leave application filing & 1-click approval flow
@@ -32,7 +32,8 @@ frontend/src/
 │   ├── SalarySlipModule.jsx       # Paystub generator with child tables (allowances/deductions) & print view
 │   ├── HRDocumentModule.jsx       # Company policy & handbook reader with category filters
 │   ├── ChatModule.jsx             # Grounded HR AI Assistant with DB citations & prompt suggestions
-│   ├── AttendanceModule.jsx       # Attendance logging component
+│   ├── AttendanceModule.jsx       # Shift attendance tracking with status-aware Clock IN/OUT controls & GPS widget
+│   ├── ShiftManagementModule.jsx  # Shift schedule CRUD, weekly offs, and 30-min late entry grace period management
 │   └── PayrollModule.jsx          # Payroll batch run component
 ├── services/
 │   ├── apiService.js              # Full backend REST client with session credentials & error handling

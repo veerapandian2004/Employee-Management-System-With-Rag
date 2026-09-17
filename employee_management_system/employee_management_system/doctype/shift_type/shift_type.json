@@ -55,7 +55,7 @@
    "label": "Enable Auto Attendance"
   },
   {
-   "default": "15",
+   "default": "30",
    "fieldname": "late_entry_grace_period",
    "fieldtype": "Int",
    "label": "Late Entry Grace Period (Minutes)"

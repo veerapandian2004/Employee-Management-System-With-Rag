@@ -80,7 +80,9 @@ flowchart TD
 ### Step 3.2: Check-in / Check-out Capture
 - Raw punches are ingested into `tabEmployee Checkin` through:
   1. Biometric punch devices or external attendance API integrations.
-  2. The React web application's **Quick Clock IN** and **Quick Clock OUT** GPS-validated buttons.
+  2. The React web application's **Status-Aware Quick Clock IN / OUT** controls in `AttendanceModule.jsx` and `GpsClockWidget.jsx`:
+     - **Dynamic Single Button UX**: The header action bar presents exactly one contextual action: only **Clock OUT** when actively working, only **Clock IN** when clocked out, or an **On Leave Today** badge when on approved leave (preventing redundant duplicate buttons and invalid punch sequences).
+     - **Real-Time Cross-Component Sync**: State changes broadcast `attendance-status-changed` window events and synchronize via `apiGetMyAttendanceStatus` to ensure zero desynchronization between widget and header controls.
 - Every entry stores `employee`, exact `time`, and `log_type` (`IN` or `OUT`).
 
 ### Step 3.3: Execution Triggers
@@ -119,6 +121,16 @@ All check-in logs within the calculated shift window are queried in ascending ch
 3. **Paired Intervals**: Each valid `(IN, OUT)` interval is accumulated:
    $$\text{Total Working Hours} = \sum_{i=1}^{N} \frac{\text{OUT}_i - \text{IN}_i}{3600}$$
    *Example*: `09:05 IN` $\rightarrow$ `13:00 OUT` (3.92 hrs) + `14:00 IN` $\rightarrow$ `18:10 OUT` (4.17 hrs) = **8.08 working hours**.
+
+### Step 3.5b: Late Entry & Early Exit Grace Period Evaluation
+- **Late Entry Grace Period Standard (30 Minutes)**:
+  - For every employee execution, clocking in up to **30 minutes** after shift start time (`first_in <= shift_start + 30 minutes`) is strictly **NOT late entry** (`late_entry = 0`).
+  - Only clock-ins occurring strictly more than 30 minutes after shift start (`first_in > shift_start + late_grace`) flag the record with `late_entry = 1` and append `' | Late Entry'` to attendance remarks.
+  - The evaluation engine guarantees `late_grace = max(30, raw_grace) if raw_grace else 30`.
+- **Early Exit Grace Period**:
+  - If the last clock-out occurs before the departure cutoff (`last_out < shift_end - early_exit_grace_period`), `early_exit = 1`.
+- **Database Self-Healing**:
+  - `ensure_shift_type_grace_periods()` automatically upgrades any shift types with `late_entry_grace_period < 30` to 30 minutes and reconciles historical attendance records where check-in was within 30 minutes of shift start (`late_entry = 0`).
 
 ### Step 3.6: Strict Status Priority Resolution Rules
 

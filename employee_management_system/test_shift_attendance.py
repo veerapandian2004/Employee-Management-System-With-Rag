@@ -159,28 +159,39 @@ class TestShiftAttendance(unittest.TestCase):
 		self.assertEqual(res["total_working_hours"], 8.00)
 
 	def test_07_late_entry_grace_period(self):
-		"""Verify late entry threshold evaluation against 15 minute grace period."""
-		mock_shift = {"late_entry_grace_period": 15, "early_exit_grace_period": 15}
+		"""Verify late entry threshold evaluation against 30 minute grace period."""
+		mock_shift = {"late_entry_grace_period": 30, "early_exit_grace_period": 15}
 		shift_start = datetime.datetime(2026, 9, 10, 9, 0, 0)
 		shift_end = datetime.datetime(2026, 9, 10, 17, 0, 0)
 
-		# On time (within 15 min grace: 09:10 <= 09:15)
-		late_entry, early_exit = evaluate_grace_periods(
-			mock_shift,
-			shift_start,
-			shift_end,
-			first_in=datetime.datetime(2026, 9, 10, 9, 10, 0),
-			last_out=datetime.datetime(2026, 9, 10, 17, 5, 0),
-		)
-		self.assertEqual(late_entry, 0)
-		self.assertEqual(early_exit, 0)
-
-		# Late entry (09:20 > 09:15)
+		# On time (within 30 min grace: 09:20 <= 09:30)
 		late_entry, early_exit = evaluate_grace_periods(
 			mock_shift,
 			shift_start,
 			shift_end,
 			first_in=datetime.datetime(2026, 9, 10, 9, 20, 0),
+			last_out=datetime.datetime(2026, 9, 10, 17, 5, 0),
+		)
+		self.assertEqual(late_entry, 0)
+		self.assertEqual(early_exit, 0)
+
+		# Exactly at 30 min grace (09:30 <= 09:30)
+		late_entry, early_exit = evaluate_grace_periods(
+			mock_shift,
+			shift_start,
+			shift_end,
+			first_in=datetime.datetime(2026, 9, 10, 9, 30, 0),
+			last_out=datetime.datetime(2026, 9, 10, 17, 5, 0),
+		)
+		self.assertEqual(late_entry, 0)
+		self.assertEqual(early_exit, 0)
+
+		# Late entry (09:35 > 09:30)
+		late_entry, early_exit = evaluate_grace_periods(
+			mock_shift,
+			shift_start,
+			shift_end,
+			first_in=datetime.datetime(2026, 9, 10, 9, 35, 0),
 			last_out=datetime.datetime(2026, 9, 10, 17, 5, 0),
 		)
 		self.assertEqual(late_entry, 1)
@@ -307,7 +318,7 @@ class TestShiftAttendance(unittest.TestCase):
 				"start_time": "22:00:00",
 				"end_time": "06:00:00",
 				"enable_auto_attendance": 1,
-				"late_entry_grace_period": 15,
+				"late_entry_grace_period": 30,
 				"early_exit_grace_period": 15,
 				"working_hours_threshold_for_half_day": 4.0,
 				"working_hours_threshold_for_present": 7.5,

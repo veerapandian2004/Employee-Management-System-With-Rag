@@ -44,7 +44,7 @@ This document provides a comprehensive reference for the Employee Management Sys
 | `date_of_joining` | `DATE` | `YYYY-MM-DD` | Official start date of employment. |
 | `reporting_manager`| `VARCHAR(140)` | Links to `tabEmployee` | Employee ID or supervisor name. |
 | `employment_type` | `VARCHAR(50)` | `'Full-Time'`, `'Part-Time'`, `'Contract'`, `'Intern'` | Contract classification. |
-| `status` | `VARCHAR(50)` | `'Active'`, `'On Leave'`, `'Suspended'`, `'Terminated'` | Current lifecycle status. Active staff have `status = 'Active'`. |
+| `status` | `VARCHAR(50)` | `'Active'`, `'On Leave'`, `'Suspended'`, `'Terminated'` | Current lifecycle status. Active staff have `status = 'Active'`. Note: On-leave status is dynamically reconciled with approved leave applications covering today (`from_date <= today <= to_date`) or today's attendance; expired `'On Leave'` database records are automatically self-healed back to `'Active'` via `get_employees`. |
 | `basic_salary` | `DECIMAL(18,2)`| Numeric | Base monthly or annual compensation (e.g., `75000.00`, `95000.00`). |
 | `skills` | `TEXT` | CSV | Technical and professional competencies. |
 | `user_id` | `VARCHAR(140)` | Links to `tabUser` | Associated Frappe login email. |
@@ -147,7 +147,7 @@ This document provides a comprehensive reference for the Employee Management Sys
 | `in_time` | `DATETIME` | `YYYY-MM-DD HH:MM:SS` | Timestamp of first clock-in of the day. |
 | `out_time` | `DATETIME` | `YYYY-MM-DD HH:MM:SS` | Timestamp of final clock-out of the day. |
 | `working_hours` | `DECIMAL(6,2)` | Float | Total hours worked during the shift. |
-| `late_entry` | `INT` | `0` or `1` | `1` if first_in exceeded shift grace period. |
+| `late_entry` | `INT` | `0` or `1` | `1` if first_in exceeded shift grace period (> 30 mins after shift start). Clock-in within 30 mins is `0`. |
 | `early_exit` | `INT` | `0` or `1` | `1` if last_out was before shift departure cutoff. |
 | `auto_clocked_out` | `INT` | `0` or `1` | `1` if automatically clocked out by the system. |
 | `clock_out_reason` | `VARCHAR(140)` | String | Reason: `'Left Office Location'` or `'Shift Completed'`. |
@@ -196,7 +196,7 @@ This document provides a comprehensive reference for the Employee Management Sys
 | `start_time` | `TIME` | `HH:MM:SS` | Shift begin time (e.g., `'09:00:00'`). |
 | `end_time` | `TIME` | `HH:MM:SS` | Shift end time (e.g., `'18:00:00'`). |
 | `weekly_off_days` | `VARCHAR(140)` | CSV | Configured weekly rest days (e.g., `'Saturday, Sunday'`, `'Sunday'`). |
-| `late_entry_grace_period` | `INT` | Minutes | Grace period in minutes for late arrival (e.g., `15`). |
+| `late_entry_grace_period` | `INT` | Minutes | Grace period in minutes for late arrival (standard: `30` mins; clock-in up to 30 mins after shift start is not late). |
 | `early_exit_grace_period` | `INT` | Minutes | Grace period in minutes for early departure. |
 | `working_hours_threshold_for_half_day` | `DECIMAL(5,2)` | Hours | Minimum hours required for Half Day status (e.g., `4.0`). |
 | `working_hours_threshold_for_present` | `DECIMAL(5,2)` | Hours | Minimum hours required for Full Day Present status (e.g., `8.0`). |
